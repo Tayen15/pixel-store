@@ -1,0 +1,53 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { AdminDashboard } from '@/components/AdminDashboard';
+import { db, schema } from '@/db';
+import { insightXPro } from '@/lib/insightxpro/client';
+import { getLiveUsdtRate } from '@/lib/pricing/fx-service';
+import { getSystemConfig } from '@/lib/settings/service';
+import { desc } from 'drizzle-orm';
+import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from '@/lib/auth/admin';
+import { syncRealtimeCatalog } from '@/lib/catalog/service';
+
+// Guard: verify admin authorization session
+const sessionCookie = Astro.cookies.get(ADMIN_COOKIE_NAME)?.value;
+if (!verifyAdminSessionToken(sessionCookie)) {
+  return Astro.redirect('/admin/login');
+}
+
+// Background sync if needed (>30s)
+try {
+  await syncRealtimeCatalog(false);
+} catch {}
+
+const config = await getSystemConfig();
+const liveFx = await getLiveUsdtRate(true);
+
+let supplierBalance = 0;
+let supplierStatus = 'active';
+
+try {
+  const balanceData = await insightXPro.getBalance();
+  supplierBalance = balanceData.balance;
+  supplierStatus = balanceData.status || 'active';
+} catch {
+  supplierStatus = 'unreachable';
+}
+
+const products = await db.select().from(schema.productsCache);
+const recentOrders = await db.select().from(schema.orders).orderBy(desc(schema.orders.createdAt)).limit(50);
+---
+
+<Layout title="Panel Pengelola — Sigma Store">
+  <AdminDashboard
+    client:load
+    initialConfig={config}
+    initialProducts={products}
+    initialOrders={recentOrders}
+    initialSupplier={{
+      balanceUsdt: supplierBalance,
+      status: supplierStatus,
+    }}
+    initialLiveFx={liveFx}
+  />
+</Layout>

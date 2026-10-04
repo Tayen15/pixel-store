@@ -1,0 +1,15 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { AdminLoginForm } from '@/components/AdminLoginForm';
+import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from '@/lib/auth/admin';
+
+// Check if user is already authenticated
+const sessionCookie = Astro.cookies.get(ADMIN_COOKIE_NAME)?.value;
+if (verifyAdminSessionToken(sessionCookie)) {
+  return Astro.redirect('/admin');
+}
+---
+
+<Layout title="Login Pengelola — Sigma Store">
+  <AdminLoginForm client:load />
+</Layout>

@@ -1,0 +1,50 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { StoreFront, type ProductItem } from '@/components/StoreFront';
+import { db, schema } from '@/db';
+import { calculateRetailPriceIdr, getDynamicPricingConfig } from '@/lib/pricing/engine';
+import { getSystemConfig } from '@/lib/settings/service';
+import { syncRealtimeCatalog } from '@/lib/catalog/service';
+
+const config = await getSystemConfig();
+const dynamicPricing = await getDynamicPricingConfig();
+
+// Realtime sync from supplier with 30s rate-limit throttle:
+// If database is fresh OR last sync > 30s, this updates products & stock automatically
+try {
+  await syncRealtimeCatalog(false);
+} catch (err) {
+  console.warn('Realtime catalog background sync error:', (err as Error).message);
+}
+
+// Retrieve latest products from database
+const cached = await db.select().from(schema.productsCache);
+
+// Dynamically calibrate prices and stock based on realtime exchange rate & database
+const products: ProductItem[] = cached.map((p) => {
+  const calibrated = calculateRetailPriceIdr(p.basePriceUsdt, 1, dynamicPricing);
+  const stockCount = p.stock ?? 0;
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category || 'Digital',
+    description: p.description || '',
+    retailPriceIdr: calibrated.unitPriceIdr,
+    basePriceUsdt: p.basePriceUsdt,
+    stock: stockCount,
+    inStock: Boolean(stockCount > 0 && p.inStock),
+    minQuantity: p.minQuantity || 1,
+    maxQuantity: p.maxQuantity || config.orders.maxQuantityPerOrder,
+    imageUrl: p.imageUrl || undefined,
+  };
+});
+---
+
+<Layout title={`${config.store.storeName} — Digital Reseller Instan QRIS`}>
+  <StoreFront 
+    client:load 
+    initialProducts={products} 
+    currentFxRate={dynamicPricing.usdtIdrRate}
+    fxSource={dynamicPricing.fxSource || 'Indodax'}
+  />
+</Layout>
