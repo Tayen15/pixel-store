@@ -1,0 +1,30 @@
+# Git and IDE
+.git
+.github
+.vscode
+.idea
+
+# Build artifacts and local dependencies
+.astro
+dist
+node_modules
+data
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Documentation & Tests
+docs
+tests
+*.md
+!README.md
+
+# Logs and OS files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
