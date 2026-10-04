@@ -21,23 +21,37 @@ try {
 const cached = await db.select().from(schema.productsCache);
 
 // Dynamically calibrate prices and stock based on realtime exchange rate & database
-const products: ProductItem[] = cached.map((p) => {
-  const calibrated = calculateRetailPriceIdr(p.basePriceUsdt, 1, dynamicPricing);
-  const stockCount = p.stock ?? 0;
-  return {
-    id: p.id,
-    name: p.name,
-    category: p.category || 'Digital',
-    description: p.description || '',
-    retailPriceIdr: calibrated.unitPriceIdr,
-    basePriceUsdt: p.basePriceUsdt,
-    stock: stockCount,
-    inStock: Boolean(stockCount > 0 && p.inStock),
-    minQuantity: p.minQuantity || 1,
-    maxQuantity: p.maxQuantity || config.orders.maxQuantityPerOrder,
-    imageUrl: p.imageUrl || undefined,
-  };
-});
+const products: ProductItem[] = cached
+  .filter((p) => p.isActive !== false)
+  .map((p) => {
+    const calibrated = calculateRetailPriceIdr(p.basePriceUsdt, 1, dynamicPricing);
+    const stockCount = p.stock ?? 0;
+    const effectivePrice = (p.customRetailPriceIdr && p.customRetailPriceIdr > 0)
+      ? p.customRetailPriceIdr
+      : (p.retailPriceIdr || calibrated.unitPriceIdr);
+
+    return {
+      id: p.id,
+      name: p.name,
+      category: p.category || 'Digital',
+      description: p.description || '',
+      retailPriceIdr: effectivePrice,
+      basePriceUsdt: p.basePriceUsdt,
+      stock: stockCount,
+      inStock: Boolean(stockCount > 0 && p.inStock),
+      minQuantity: p.minQuantity || 1,
+      maxQuantity: p.maxQuantity || config.orders.maxQuantityPerOrder,
+      imageUrl: p.imageUrl || undefined,
+      isTopProduct: Boolean(p.isTopProduct),
+      customRetailPriceIdr: p.customRetailPriceIdr || undefined,
+    };
+  })
+  .sort((a, b) => {
+    // Sort Top Products first
+    if (a.isTopProduct && !b.isTopProduct) return -1;
+    if (!a.isTopProduct && b.isTopProduct) return 1;
+    return 0;
+  });
 ---
 
 <Layout title={`${config.store.storeName} — Digital Reseller Instan QRIS`}>

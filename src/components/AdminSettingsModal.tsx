@@ -89,8 +89,6 @@ export const AdminSettingsModal: React.FC<AdminSettingsModalProps> = ({
 
     try {
       const { data, error } = await actions.updatePricingSettings({
-        usdtIdrRate: Number(usdtRate),
-        autoFxRate,
         fxBufferPercent: Number(fxBufferPercent),
         marginPercent: Number(marginPercent),
         fixedFeeIdr: Number(fixedFee),

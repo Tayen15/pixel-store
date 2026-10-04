@@ -90,7 +90,7 @@ export class TakoPaymentGateway implements IPaymentGateway {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
-        'User-Agent': 'SigmaStore/1.0',
+        'User-Agent': 'PixelStore/1.0',
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -182,7 +182,7 @@ export class TakoPaymentGateway implements IPaymentGateway {
       const res = await fetch(endpoint, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
-          'User-Agent': 'SigmaStore/1.0',
+          'User-Agent': 'PixelStore/1.0',
           Accept: 'application/json',
         },
       });
@@ -204,7 +204,7 @@ export class TakoPaymentGateway implements IPaymentGateway {
       const res = await fetch(endpoint, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
-          'User-Agent': 'SigmaStore/1.0',
+          'User-Agent': 'PixelStore/1.0',
           Accept: 'application/json',
         },
       });

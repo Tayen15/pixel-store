@@ -7,8 +7,8 @@ interface Props {
 }
 
 const { 
-  title = 'Sigma Store — Reseller Voucher & Lisensi Digital Otomatis via QRIS', 
-  description = 'Dapatkan lisensi original dan voucher digital langsung via QRIS dengan pengiriman otomatis instan.' 
+  title = 'Pixel Store — Reseller Akun Premium & Lisensi Digital Instan', 
+  description = 'Dapatkan akun langganan premium dan lisensi digital langsung via QRIS dengan pengiriman otomatis instan.' 
 } = Astro.props;
 ---
 
@@ -24,8 +24,30 @@ const {
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    
+    <!-- Google Fonts: Plus Jakarta Sans per DESIGN.md -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <script is:inline>
+      (function() {
+        try {
+          const stored = localStorage.getItem('pixel_theme');
+          if (stored === 'light') {
+            document.documentElement.classList.remove('dark');
+          } else if (stored === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+            document.documentElement.classList.remove('dark');
+          } else {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (_) {}
+      })();
+    </script>
   </head>
-  <body class="bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 min-h-screen antialiased">
+  <body class="bg-[#F8F9FA] dark:bg-[#121212] text-[#1A1D20] dark:text-[#F9FAFB] min-h-screen antialiased">
     <slot />
   </body>
 </html>

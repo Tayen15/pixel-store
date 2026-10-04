@@ -1,0 +1,29 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { SupportChat } from '@/components/SupportChat';
+import { StoreNavbar } from '@/components/layout/StoreNavbar';
+import { StoreFooter } from '@/components/layout/StoreFooter';
+import { getUserFromSession, USER_COOKIE_NAME } from '@/lib/auth/user';
+
+const sessionToken = Astro.cookies.get(USER_COOKIE_NAME)?.value;
+const user = await getUserFromSession(sessionToken);
+
+const initialUser = user ? {
+  id: user.id,
+  name: user.name,
+  email: user.email,
+} : null;
+---
+
+<Layout title="Layanan Bantuan & Support — Pixel Store">
+  <div class="min-h-screen bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 flex flex-col font-sans transition-colors duration-200">
+    <StoreNavbar client:load activePage="support" />
+
+    {/* Main Chat Interface */}
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 my-4">
+      <SupportChat client:load initialUser={initialUser} />
+    </main>
+
+    <StoreFooter client:load />
+  </div>
+</Layout>

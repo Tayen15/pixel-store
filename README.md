@@ -1,43 +1,32 @@
-# Astro Starter Kit: Minimal
+# Pixel Store
 
-```sh
-npm create astro@latest -- --template minimal
+**Pixel Store** adalah platform e-commerce reseller akun langganan premium dan lisensi digital dengan pengiriman otomatis instan berbasis **Astro (SSR)**, **Neon PostgreSQL**, dan pembayaran terintegrasi **QRIS**.
+
+---
+
+## ⚡ Tech Stack
+
+* **Framework**: Astro 5 (SSR / Node Adapter)
+* **Interactive Islands**: React 19 (Tailwind CSS v4)
+* **Database & ORM**: Neon PostgreSQL (AWS Singapore `ap-southeast-1`) + Drizzle ORM (`postgres.js`)
+* **Wholesale Supplier**: InsightXPro Wholesale API Client
+* **Payment Gateway**: Tako.id QRIS Gateway
+* **Realtime FX Engine**: Indodax Market Ticker with CoinGecko fallback
+* **Customer Authentication**: Scrypt salt-hashed credentials & 30-day session cookies
+
+---
+
+## 🚀 Menjalankan Project Secara Lokal
+
+```bash
+# 1. Install dependensi
+bun install
+
+# 2. Sinkronisasi katalog awal ke PostgreSQL
+bun run scripts/sync-catalog.ts
+
+# 3. Jalankan server pengembangan
+bun run dev
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
-
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
-```
-
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
-
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
-
-Any static assets, like images, can be placed in the `public/` directory.
-
-## 🧞 Commands
-
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+Kunjungi `http://localhost:4321` pada browser.

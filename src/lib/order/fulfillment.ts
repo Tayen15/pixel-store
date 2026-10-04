@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { db, rawClient, schema } from '@/db';
+import { db, sqlClient, schema } from '@/db';
 import { insightXPro } from '@/lib/insightxpro/client';
 
 export interface FulfillmentResult {
@@ -56,18 +56,18 @@ export async function executeOrderFulfillment(
     };
   }
 
-  // 2. ATOMIC LOCK (Compare-and-Swap)
+  // 2. ATOMIC LOCK (Compare-and-Swap in PostgreSQL)
   // Only 1 execution thread can transition PENDING_PAYMENT -> FULFILLING
-  const lockResult = await rawClient.execute({
-    sql: `UPDATE orders 
-          SET status = 'FULFILLING', 
-              paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP), 
-              updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ? AND status = 'PENDING_PAYMENT'`,
-    args: [orderId],
-  });
+  const lockResult = await sqlClient`
+    UPDATE orders 
+    SET status = 'FULFILLING', 
+        paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP), 
+        updated_at = CURRENT_TIMESTAMP 
+    WHERE id = ${orderId} AND status = 'PENDING_PAYMENT'
+    RETURNING id;
+  `;
 
-  if (lockResult.rowsAffected === 0) {
+  if (lockResult.length === 0) {
     // Another worker has already acquired the lock or transitioned the status
     return {
       success: true,
@@ -78,14 +78,13 @@ export async function executeOrderFulfillment(
 
   // Update associated payment record
   try {
-    await rawClient.execute({
-      sql: `UPDATE payments 
-            SET status = 'PAID', 
-                paid_at = CURRENT_TIMESTAMP, 
-                raw_webhook_payload = COALESCE(?, raw_webhook_payload) 
-            WHERE order_id = ?`,
-      args: [rawPayload || null, orderId],
-    });
+    await sqlClient`
+      UPDATE payments 
+      SET status = 'PAID', 
+          paid_at = CURRENT_TIMESTAMP, 
+          raw_webhook_payload = COALESCE(${rawPayload || null}, raw_webhook_payload) 
+      WHERE order_id = ${orderId}
+    `;
   } catch (err) {
     console.warn('Payment record update warning:', (err as Error).message);
   }

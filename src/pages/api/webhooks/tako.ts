@@ -46,10 +46,10 @@ export const POST: APIRoute = async ({ request }) => {
       paymentRecord = paymentsFound[0];
     }
 
-    // Fallback: extract order number from message (e.g. "Pesanan SIGMA-20261003-XXXX")
+    // Fallback: extract order number from message (e.g. "Pesanan PIXEL-20261004-XXXX")
     if (!paymentRecord) {
       const message = String(data.message || payload.message || '');
-      const match = message.match(/SIGMA-[0-9]{8}-[A-Za-z0-9]+/);
+      const match = message.match(/(?:PIXEL|SIGMA)-[0-9]{8}-[A-Za-z0-9]+/);
       if (match) {
         const orderNumber = match[0];
         const ordersFound = await db

@@ -51,8 +51,8 @@ function getDefaultConfig(): SystemConfig {
       roundingStep: 1000,
     },
     store: {
-      storeName: process.env.STORE_NAME || 'SIGMA STORE',
-      storeTagline: process.env.STORE_TAGLINE || 'Voucher & Lisensi Asli. Bayar Sekali, Langsung Muncul.',
+      storeName: process.env.STORE_NAME || 'PIXEL STORE',
+      storeTagline: process.env.STORE_TAGLINE || 'Akun Premium & Lisensi Digital. Bayar Sekali, Langsung Muncul.',
       supportWhatsapp: process.env.SUPPORT_WHATSAPP || '08123456789',
       announcement: process.env.STORE_ANNOUNCEMENT || 'Pengiriman otomatis 24/7 aktif via QRIS.',
       isStoreOpen: true,

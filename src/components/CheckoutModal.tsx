@@ -36,12 +36,69 @@ export interface ProductData {
 
 interface CheckoutModalProps {
   product: ProductData | null;
+  initialQuantity?: number;
   onClose: () => void;
 }
 
-export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }) => {
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({ 
+  product, 
+  initialQuantity = 1,
+  onClose 
+}) => {
   const [step, setStep] = useState<'form' | 'qris' | 'success' | 'failed_supplier'>('form');
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(initialQuantity || 1);
+  const [unitPrice, setUnitPrice] = useState<number>(product?.retailPriceIdr || 0);
+  const [priceNotice, setPriceNotice] = useState<string | null>(null);
+  const [isVerifyingPrice, setIsVerifyingPrice] = useState<boolean>(true);
+  const [canPurchase, setCanPurchase] = useState<boolean>(true);
+  const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
+
+  // Synchronize initial unit price and trigger realtime pre-flight check from database
+  useEffect(() => {
+    if (!product) return;
+    setUnitPrice(product.retailPriceIdr);
+    setIsVerifyingPrice(true);
+    setPriceNotice(null);
+
+    let isMounted = true;
+    actions
+      .getLatestProductPrice({ productId: product.id, quantity: 1 })
+      .then(({ data, error }) => {
+        if (!isMounted) return;
+        if (!error && data) {
+          if (data.canPurchase === false) {
+            setCanPurchase(false);
+            setUnavailableReason(data.unavailableReason || 'Stok / saldo kuota sedang kosong');
+          } else {
+            setCanPurchase(true);
+            setUnavailableReason(null);
+          }
+
+          if (data.unitPriceIdr !== product.retailPriceIdr) {
+            setPriceNotice(
+              `Tarif telah disesuaikan dengan harga terbaru toko: Rp ${data.unitPriceIdr.toLocaleString('id-ID')} (sebelumnya Rp ${product.retailPriceIdr.toLocaleString('id-ID')}).`
+            );
+          }
+          setUnitPrice(data.unitPriceIdr);
+        }
+      })
+      .catch((err) => {
+        console.warn('Realtime price check failed:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsVerifyingPrice(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [product?.id]);
+
+  useEffect(() => {
+    if (initialQuantity && initialQuantity >= 1) {
+      setQuantity(initialQuantity);
+    }
+  }, [initialQuantity, product?.id]);
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
@@ -120,7 +177,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
 
   if (!product) return null;
 
-  const totalAmount = product.retailPriceIdr * quantity;
+  const totalAmount = unitPrice * quantity;
   const { features, notes } = parseCatalogDescription(product.description);
 
   // Handle Order Submission -> Request QRIS (Instant, zero-friction)
@@ -295,9 +352,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-lg bg-white dark:bg-[#1E1E1E] border border-[#E5E7EB] dark:border-[#374151] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB] dark:border-[#374151] bg-[#F8F9FA]/60 dark:bg-[#1E1E1E]">
           <div className="flex items-center gap-3">
             <ServiceLogo 
               name={product.name} 
@@ -372,14 +429,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                     <span>{notes[0]}</span>
                   </div>
                 )}
+
+                {priceNotice && (
+                  <div className="mt-2.5 p-2.5 bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800/70 rounded-xl text-[11px] text-blue-800 dark:text-blue-300 flex items-start gap-1.5 animate-in fade-in duration-200">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+                    <span>{priceNotice}</span>
+                  </div>
+                )}
               </div>
 
               {/* Quantity Picker & Total */}
               <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-zinc-500">Harga Satuan</span>
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                    Rp {product.retailPriceIdr.toLocaleString('id-ID')}
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 font-mono">
+                    Rp {unitPrice.toLocaleString('id-ID')}
+                    {isVerifyingPrice && (
+                      <span className="text-[10px] text-zinc-400 font-sans">(cek tarif...)</span>
+                    )}
                   </span>
                 </div>
 
@@ -426,14 +493,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                 </div>
               </div>
 
-              {/* Instant Delivery Guarantee Alert */}
-              <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50 rounded-xl flex items-start gap-2 text-xs text-emerald-800 dark:text-emerald-300">
-                <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <div className="leading-relaxed">
-                  <strong>Link Registrasi Langsung Tampil:</strong> Setelah scan QRIS, link aktivasi akan langsung muncul di layar ini tanpa perlu menunggu email.
-                </div>
-              </div>
-
               {/* Optional Archiving Accordion */}
               <div>
                 <button
@@ -441,7 +500,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                   onClick={() => setShowOptionalFields(!showOptionalFields)}
                   className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1 transition cursor-pointer py-1"
                 >
-                  <span>Ingin simpan salinan bukti ke WhatsApp / Email? (Opsional)</span>
+                  <span>Kirim bukti ke WhatsApp / Email (Opsional)</span>
                   {showOptionalFields ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
 
@@ -475,22 +534,32 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                 )}
               </div>
 
+              {/* Unavailable / Saldo notice */}
+              {unavailableReason && !canPurchase && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{unavailableReason}</span>
+                </div>
+              )}
+
               {/* Submit CTA */}
               <button
                 type="submit"
-                disabled={isLoading || (product.stock !== undefined && product.stock <= 0)}
-                className="w-full py-3.5 px-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading || !canPurchase || (product.stock !== undefined && product.stock <= 0)}
+                className="w-full py-3.5 px-4 bg-[#2563EB] hover:bg-blue-700 dark:bg-[#3B82F6] dark:hover:bg-blue-600 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Menyiapkan Kode QRIS...</span>
+                    <span>Menyiapkan QRIS...</span>
                   </>
+                ) : !canPurchase ? (
+                  <span>{unavailableReason || 'Stok / Saldo Kuota Kosong'}</span>
                 ) : (product.stock !== undefined && product.stock <= 0) ? (
                   <span>Stok Produk Habis</span>
                 ) : (
                   <>
-                    <span>Bayar Sekarang (QRIS) — Rp {totalAmount.toLocaleString('id-ID')}</span>
+                    <span>Bayar — Rp {totalAmount.toLocaleString('id-ID')}</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -503,7 +572,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
             <div className="text-center space-y-4">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-400 text-xs font-medium">
                 <Clock className="w-3.5 h-3.5" />
-                <span>Batas Waktu Pembayaran: {formatTimer(timeRemaining)}</span>
+                <span>Batas Waktu: {formatTimer(timeRemaining)}</span>
               </div>
 
               {/* Authentic QRIS National Standard Card */}
@@ -517,7 +586,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                     </span>
                   </div>
                   <div className="text-[11px] font-bold text-zinc-800 uppercase tracking-tight">
-                    SIGMA STORE
+                    PIXEL STORE
                   </div>
                 </div>
 
@@ -545,17 +614,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                 </div>
               </div>
 
-              {/* Quick Actions: Download QR & Open Tako */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1 max-w-[320px] mx-auto">
+              {/* Quick Actions: Download QR & Direct Payment Link */}
+              <div className="flex items-center justify-center gap-2 pt-1 max-w-[320px] mx-auto">
                 <button
                   type="button"
                   onClick={handleDownloadQr}
                   disabled={!renderedQrUrl || isQrLoading}
-                  className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
-                  title="Simpan gambar QRIS untuk di-scan dari galeri m-Banking"
+                  className="flex-1 py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  title="Unduh QR"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Unduh Gambar QRIS</span>
+                  <span>Unduh QR</span>
                 </button>
 
                 {orderData.paymentUrl && (
@@ -563,22 +632,41 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                     href={orderData.paymentUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
-                    title="Buka langsung di aplikasi Tako"
+                    className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
+                    title="Buka halaman pembayaran"
                   >
-                    <span>Buka Halaman Tako</span>
+                    <span>Buka Pembayaran</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-500 font-mono">
-                  <span>ID Pesanan: {orderData.orderNumber}</span>
+              {/* Amount and Order ID */}
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-center gap-2">
+                  <h4 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 font-mono tracking-tight">
+                    Rp {orderData.amountIdr.toLocaleString('id-ID')}
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={copyAmount}
+                    className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition cursor-pointer"
+                    title="Salin Nominal"
+                  >
+                    {copiedAmount ? (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-sans">Tersalin!</span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-400 dark:text-zinc-500 font-mono">
+                  <span>ID: {orderData.orderNumber}</span>
                   <button
                     type="button"
                     onClick={copyOrderNumber}
-                    className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 transition rounded"
+                    className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 transition rounded cursor-pointer"
                     title="Salin ID Pesanan"
                   >
                     {copiedOrderNumber ? (
@@ -588,45 +676,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                     )}
                   </button>
                 </div>
-
-                <div className="flex items-center justify-center gap-2">
-                  <h4 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 font-mono">
-                    Rp {orderData.amountIdr.toLocaleString('id-ID')}
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={copyAmount}
-                    className="p-1.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition"
-                    title="Salin Nominal"
-                  >
-                    {copiedAmount ? (
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">Tersalin!</span>
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                </div>
-
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto">
-                  Scan dengan GoPay, OVO, Dana, ShopeePay, BCA, Mandiri Livin', BRImo, atau aplikasi m-Banking lainnya. Bisa juga simpan QR dan unggah via menu "Pindai dari Galeri".
-                </p>
               </div>
 
-              <div className="flex items-center justify-center gap-2 text-xs text-zinc-500 animate-pulse pt-1">
+              {/* Status Indicator */}
+              <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 pt-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                <span>Menunggu verifikasi pembayaran... Link registrasi akan langsung muncul otomatis.</span>
+                <span>Menunggu pembayaran...</span>
               </div>
 
               {/* Sandbox Quick Tester */}
-              <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
                 <button
                   type="button"
                   onClick={handleSimulatePayment}
                   disabled={isLoading}
-                  className="w-full py-2.5 px-3 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2 px-3 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Simulasikan Pembayaran Berhasil (Testing Sandbox)</span>
+                  <span>Simulasi Pembayaran Berhasil</span>
                 </button>
               </div>
             </div>
@@ -641,17 +708,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
 
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  Pembayaran Berhasil Dikonfirmasi
+                  Pembayaran Berhasil
                 </span>
-                <h4 className="text-xl font-extrabold text-zinc-900 dark:text-zinc-100 mt-1">
-                  Link Registrasi Anda Telah Terbit!
+                <h4 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
+                  Akses Produk Anda
                 </h4>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                  Link aktivasi resmi langsung tampil di bawah ini. Anda dapat langsung membuka link untuk klaim atau menyalinnya.
-                </p>
               </div>
 
-              {/* License / Registration Links Cards */}
+              {/* Credentials & License / Registration Links Cards per DESIGN.md Section 4.D */}
               <div className="space-y-3">
                 {licenseCodes.map((code, idx) => {
                   const isUrl = code.startsWith('http://') || code.startsWith('https://');
@@ -659,16 +723,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                   return (
                     <div
                       key={idx}
-                      className="p-4 bg-zinc-900 text-zinc-100 rounded-2xl border border-zinc-800 space-y-3 shadow-inner text-left"
+                      className="p-4 bg-[#F8F9FA] dark:bg-[#1E1E1E] text-[#1A1D20] dark:text-[#F9FAFB] rounded-2xl border border-[#E5E7EB] dark:border-[#374151] space-y-3 shadow-sm text-left"
                     >
-                      <div className="flex items-center justify-between text-[11px] text-zinc-400 uppercase tracking-widest font-mono">
-                        <span>{isUrl ? 'Link Registrasi / Redeem' : 'Kode Voucher / Serial'} {licenseCodes.length > 1 ? `#${idx + 1}` : ''}</span>
-                        <span className="text-emerald-400 font-semibold lowercase">siap aktivasi</span>
+                      <div className="flex items-center justify-between text-[11px] text-[#6C757D] dark:text-[#9CA3AF] uppercase tracking-widest font-mono">
+                        <span>{isUrl ? 'Tautan Aktivasi / Registrasi' : 'Credentials / Kode Lisensi'} {licenseCodes.length > 1 ? `#${idx + 1}` : ''}</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold lowercase">siap digunakan</span>
                       </div>
 
-                      {/* Display Code / Link */}
-                      <div className="p-3 bg-black/60 rounded-xl border border-zinc-800 font-mono text-xs text-emerald-400 break-all select-all">
-                        {code}
+                      {/* Display Code / Link with Credentials Box */}
+                      <div className="p-3 bg-white dark:bg-black/60 rounded-xl border border-[#E5E7EB] dark:border-[#374151] font-mono text-xs text-[#1A1D20] dark:text-emerald-400 break-all select-all flex items-center justify-between gap-2">
+                        <span className="truncate">{code}</span>
                       </div>
 
                       {/* Direct Action Buttons */}
@@ -712,20 +776,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                 })}
               </div>
 
-              {/* Step by Step Activation Guide */}
-              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl text-left text-xs text-zinc-500 dark:text-zinc-400 space-y-2 border border-zinc-200 dark:border-zinc-800">
-                <div className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  <span>Petunjuk Aktivasi Cepat:</span>
-                </div>
-                <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-300">
-                  <li>Klik tombol <strong className="text-zinc-900 dark:text-white">"Buka Link Registrasi"</strong> di atas.</li>
-                  <li>Login menggunakan akun email pribadi Anda pada situs resmi layanan.</li>
-                  <li>Ikuti petunjuk di layar, paket langganan Anda akan langsung aktif seketika.</li>
-                </ol>
-                <div className="text-[11px] text-amber-700 dark:text-amber-400 pt-1 border-t border-zinc-200 dark:border-zinc-700/60">
-                  ⚠️ <strong>Penting:</strong> Link registrasi ini bersifat rahasia dan sekali pakai. Segera buka dan klaim sebelum batas waktu kedaluwarsa.
-                </div>
+              {/* Simple Guide Note */}
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl text-left text-xs text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
+                <p>Gunakan link registrasi atau kode lisensi di atas untuk mengaktifkan layanan pada situs resmi.</p>
               </div>
 
               <button
@@ -733,7 +786,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
                 onClick={onClose}
                 className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-semibold rounded-xl text-xs transition cursor-pointer"
               >
-                Selesai & Tutup Jendela
+                Selesai
               </button>
             </div>
           )}
@@ -776,7 +829,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ product, onClose }
               <div className="space-y-2 pt-1">
                 <a
                   href={`https://wa.me/628123456789?text=${encodeURIComponent(
-                    `Halo Admin Sigma Store, saya sudah bayar QRIS untuk pesanan ${orderData?.orderNumber} (Rp ${orderData?.amountIdr?.toLocaleString('id-ID')}), status sistem: stok supplier habis. Mohon bantuan aktivasi manual atau refund.`
+                    `Halo Admin Pixel Store, saya sudah bayar QRIS untuk pesanan ${orderData?.orderNumber} (Rp ${orderData?.amountIdr?.toLocaleString('id-ID')}), status sistem: stok supplier habis. Mohon bantuan aktivasi manual atau refund.`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"

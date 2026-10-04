@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 70" width="40" height="40" fill="none" class="pixel-logo">
+  <!-- Blok Utama (Mempresentasikan "Store" atau "Vault") -->
+  <rect x="10" y="28" width="32" height="32" rx="6" fill="currentColor" />
+  
+  <!-- Pixel Ekstraksi Atas (Mempresentasikan data API/Digital) -->
+  <rect x="28" y="10" width="14" height="14" rx="3" fill="#2563EB" />
+  
+  <!-- Pixel Ekstraksi Kanan -->
+  <rect x="46" y="28" width="14" height="14" rx="3" fill="#2563EB" />
+  
+  <!-- Pixel Sudut Kanan Bawah -->
+  <rect x="46" y="46" width="14" height="14" rx="3" fill="currentColor" />
+</svg>

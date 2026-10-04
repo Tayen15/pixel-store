@@ -1,7 +1,10 @@
 import crypto from 'node:crypto';
+import '../env';
 
-export const ADMIN_COOKIE_NAME = 'sigma_admin_session';
-const SECRET = process.env.ADMIN_SECRET_KEY || 'sigma-store-secret-token-key-2026';
+export const ADMIN_COOKIE_NAME = 'pixel_admin_session';
+function getSecret(): string {
+  return process.env.ADMIN_SECRET_KEY || 'pixel-store-secret-token-key-2026';
+}
 
 /**
  * Verifies whether the provided PIN matches the configured secret PIN.
@@ -18,7 +21,7 @@ export function verifyAdminPin(inputPin: string): boolean {
 export function createAdminSessionToken(): string {
   const timestamp = Date.now().toString();
   const signature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', getSecret())
     .update(timestamp)
     .digest('hex');
   return `${timestamp}.${signature}`;
@@ -42,7 +45,7 @@ export function verifyAdminSessionToken(token: string | undefined): boolean {
   }
 
   const expectedSignature = crypto
-    .createHmac('sha256', SECRET)
+    .createHmac('sha256', getSecret())
     .update(timestamp)
     .digest('hex');
 

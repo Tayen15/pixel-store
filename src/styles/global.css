@@ -1,38 +1,40 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
-    --background: #fafafa;
-    --foreground: #09090b;
-    --card: #ffffff;
-    --card-foreground: #09090b;
-    --border: #e4e4e7;
-    --muted: #f4f4f5;
-    --muted-foreground: #71717a;
-    --primary: #18181b;
-    --primary-foreground: #fafafa;
-    --accent: #10b981;
-    --accent-foreground: #ffffff;
+    --background: #F8F9FA;
+    --foreground: #1A1D20;
+    --card: #FFFFFF;
+    --card-foreground: #1A1D20;
+    --border: #E5E7EB;
+    --muted: #F1F3F5;
+    --muted-foreground: #6C757D;
+    --primary: #1A1D20;
+    --primary-foreground: #FFFFFF;
+    --accent: #2563EB;
+    --accent-foreground: #FFFFFF;
   }
 
   .dark {
-    --background: #09090b;
-    --foreground: #fafafa;
-    --card: #121215;
-    --card-foreground: #fafafa;
-    --border: #27272a;
-    --muted: #18181b;
-    --muted-foreground: #a1a1aa;
-    --primary: #fafafa;
-    --primary-foreground: #18181b;
-    --accent: #10b981;
-    --accent-foreground: #09090b;
+    --background: #121212;
+    --foreground: #F9FAFB;
+    --card: #1E1E1E;
+    --card-foreground: #F9FAFB;
+    --border: #374151;
+    --muted: #262626;
+    --muted-foreground: #9CA3AF;
+    --primary: #F9FAFB;
+    --primary-foreground: #121212;
+    --accent: #3B82F6;
+    --accent-foreground: #FFFFFF;
   }
 
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 }

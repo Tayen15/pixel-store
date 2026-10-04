@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   ShieldCheck
 } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 
 export const AdminLoginForm: React.FC = () => {
   const [pin, setPin] = useState('');
@@ -43,8 +44,8 @@ export const AdminLoginForm: React.FC = () => {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-[#09090b] flex flex-col justify-center items-center px-4 py-12">
       <div className="w-full max-w-sm space-y-6">
-        {/* Back Link */}
-        <div>
+        {/* Back Link & Theme Toggle */}
+        <div className="flex items-center justify-between">
           <a
             href="/"
             className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition"
@@ -52,19 +53,24 @@ export const AdminLoginForm: React.FC = () => {
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Kembali ke Toko Publik</span>
           </a>
+          <ThemeToggle />
         </div>
 
         {/* Login Card */}
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-7 shadow-xs space-y-6">
           <div className="space-y-1.5 text-center">
-            <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl flex items-center justify-center mx-auto text-emerald-600 dark:text-emerald-400">
-              <Lock className="w-6 h-6" />
+            <div className="flex justify-center pb-1">
+              <img
+                src="/logo.svg"
+                alt="Pixel Store"
+                className="w-12 h-12 rounded-xl shadow-xs text-zinc-900 dark:text-white"
+              />
             </div>
-            <h1 className="text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white pt-2">
-              Panel Pengelola Toko
+            <h1 className="text-xl font-extrabold tracking-tight text-zinc-900 dark:text-white pt-1">
+              Dashboard PIXEL STORE
             </h1>
             <p className="text-xs text-zinc-500">
-              Masukkan PIN Rahasia Admin untuk membuka dashboard kontrol.
+              Masukkan PIN Rahasia Admin untuk login.
             </p>
           </div>
 
@@ -119,11 +125,6 @@ export const AdminLoginForm: React.FC = () => {
               )}
             </button>
           </form>
-
-          <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-center gap-1.5 text-[11px] text-zinc-400">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Sesi aman terenkripsi HTTP-Only</span>
-          </div>
         </div>
       </div>
     </div>

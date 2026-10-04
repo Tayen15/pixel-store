@@ -1,5 +1,5 @@
 {
-  "name": "sigma-store",
+  "name": "pixel-store",
   "type": "module",
   "version": "0.0.1",
   "engines": {
@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.3",
     "lucide-react": "^1.50.0",
+    "postgres": "^3.4.9",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

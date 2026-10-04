@@ -15,6 +15,12 @@ if (!verifyAdminSessionToken(sessionCookie)) {
   return Astro.redirect('/admin/login');
 }
 
+const { tab } = Astro.params;
+const validTabs = ['overview', 'orders', 'catalog', 'chats', 'users', 'pricing', 'settings'];
+if (!tab || !validTabs.includes(tab)) {
+  return Astro.redirect('/admin');
+}
+
 // Background sync if needed (>30s)
 try {
   await syncRealtimeCatalog(false);
@@ -48,16 +54,12 @@ const registeredUsers = await db
   .from(schema.users)
   .orderBy(desc(schema.users.createdAt))
   .limit(100);
-
-const validTabs = ['overview', 'orders', 'catalog', 'chats', 'users', 'pricing', 'settings'];
-const rawTab = Astro.url.searchParams.get('tab');
-const initialTab = (rawTab && validTabs.includes(rawTab)) ? rawTab : 'overview';
 ---
 
-<Layout title="Panel Pengelola — Pixel Store">
+<Layout title={`Panel Pengelola (${tab}) — Pixel Store`}>
   <AdminDashboard
     client:load
-    initialTab={initialTab as any}
+    initialTab={tab as any}
     initialConfig={config}
     initialProducts={products}
     initialOrders={recentOrders}

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { db, schema } from '@/db';
 import { insightXPro, type InsightProduct } from '@/lib/insightxpro/client';
 import { calculateRetailPriceIdr, getDynamicPricingConfig } from '@/lib/pricing/engine';
@@ -75,9 +76,7 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
     return { count: 0, products: [], isFresh: false };
   }
 
-  // Clear & atomic repopulate with fresh prices, logos, and realtime stock counts
-  await db.delete(schema.productsCache);
-
+  // Atomic upsert with fresh prices, logos, and realtime stock counts (avoids FK violation on orders)
   for (const item of rawProducts) {
     const baseUsdt = Number(item.price_usdt ?? item.price ?? (item as any).base_price_usdt ?? 0);
     const pricing = calculateRetailPriceIdr(baseUsdt, 1, dynamicPricing);
@@ -87,17 +86,33 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
     const logoUrl = getRealBrandLogoUrl(name);
     const stockCount = typeof item.stock === 'number' ? item.stock : ((item as any).available ? 99 : 0);
 
-    await db.insert(schema.productsCache).values({
-      supplierProductId: item.id,
-      name,
-      category,
-      description: cleanDescription,
-      basePriceUsdt: baseUsdt,
-      retailPriceIdr: pricing.unitPriceIdr,
-      imageUrl: logoUrl,
-      stock: stockCount,
-      inStock: stockCount > 0,
-    });
+    await db
+      .insert(schema.productsCache)
+      .values({
+        supplierProductId: item.id,
+        name,
+        category,
+        description: cleanDescription,
+        basePriceUsdt: baseUsdt,
+        retailPriceIdr: pricing.unitPriceIdr,
+        imageUrl: logoUrl,
+        stock: stockCount,
+        inStock: stockCount > 0,
+      })
+      .onConflictDoUpdate({
+        target: schema.productsCache.supplierProductId,
+        set: {
+          name,
+          category,
+          description: cleanDescription,
+          basePriceUsdt: baseUsdt,
+          retailPriceIdr: sql`COALESCE(products_cache.custom_retail_price_idr, ${pricing.unitPriceIdr})`,
+          imageUrl: logoUrl,
+          stock: stockCount,
+          inStock: stockCount > 0,
+          lastSyncedAt: sql`CURRENT_TIMESTAMP`,
+        },
+      });
   }
 
   lastSyncTimestamp = Date.now();

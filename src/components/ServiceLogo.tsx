@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { getRealBrandLogoUrl } from '@/lib/brand/logos';
 
-interface ServiceLogoProps {
+export interface ServiceLogoProps {
   name: string;
   category?: string;
   imageUrl?: string;
+  logoUrl?: string; // alias
+  size?: 'sm' | 'md' | 'lg' | string;
   className?: string;
 }
 
@@ -14,15 +16,20 @@ interface ServiceLogoProps {
  */
 export const ServiceLogo: React.FC<ServiceLogoProps> = ({ 
   name, 
-  imageUrl, 
-  className = 'w-10 h-10' 
+  imageUrl,
+  logoUrl: propLogoUrl,
+  size,
+  className,
 }) => {
   const [hasError, setHasError] = useState(false);
-  const logoUrl = imageUrl || getRealBrandLogoUrl(name);
+  const logoUrl = imageUrl || propLogoUrl || getRealBrandLogoUrl(name);
   const initialLetter = name.replace(/[^A-Za-z]/g, '').slice(0, 1).toUpperCase() || 'S';
 
+  const defaultSizeClass = size === 'sm' ? 'w-8 h-8' : size === 'lg' ? 'w-12 h-12' : 'w-10 h-10';
+  const resolvedClass = className || defaultSizeClass;
+
   return (
-    <div className={`${className} relative rounded-xl overflow-hidden bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/80 p-1 flex items-center justify-center shrink-0 shadow-xs`}>
+    <div className={`${resolvedClass} relative rounded-xl overflow-hidden bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/80 p-1 flex items-center justify-center shrink-0 shadow-xs`}>
       {!hasError ? (
         <img
           src={logoUrl}

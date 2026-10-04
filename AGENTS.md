@@ -2,7 +2,7 @@
 
 ## 1. Overview & Principles
 
-Sigma Store uses a specialized multi-agent architecture to maintain high code velocity, strict security, and zero architectural drift. Each agent operates strictly within its designated **File Domain** and adheres to the **Google Anti-Gravity Global Rules**.
+Pixel Store uses a specialized multi-agent architecture to maintain high code velocity, strict security, and zero architectural drift. Each agent operates strictly within its designated **File Domain** and adheres to the **Google Anti-Gravity Global Rules**.
 
 ---
 

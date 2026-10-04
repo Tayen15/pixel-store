@@ -1,9 +1,9 @@
-# Product Requirements Document (PRD) - Sigma Store
+# Product Requirements Document (PRD) - Pixel Store
 
 ## 1. Executive Summary
-**Sigma Store** is a specialized digital voucher and license reseller web application. It acts as an automated, localized bridge between an upstream digital wholesale provider (**InsightXPro**) and local retail customers (primarily Indonesian market).
+**Pixel Store** is a specialized digital voucher, premium account, and license reseller web application. It acts as an automated, localized bridge between an upstream digital wholesale provider (**InsightXPro**) and local retail customers (primarily Indonesian market).
 
-While the wholesale supplier operates strictly in **USDT** via a REST API, Sigma Store provides a seamless, friction-free local purchasing experience with **Indonesian Rupiah (IDR)** through local payment rails (such as **QRIS**, Virtual Accounts, and E-Wallets). The platform features an automated dynamic margin pricing engine, guest checkout, and instant product code/license delivery upon payment confirmation.
+While the wholesale supplier operates strictly in **USDT** via a REST API, Pixel Store provides a seamless, friction-free local purchasing experience with **Indonesian Rupiah (IDR)** through local payment rails (such as **QRIS**, Virtual Accounts, and E-Wallets). The platform features an automated dynamic margin pricing engine, guest checkout, and instant product code/license delivery upon payment confirmation.
 
 ---
 
