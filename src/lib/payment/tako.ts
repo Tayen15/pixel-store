@@ -218,22 +218,45 @@ export class TakoPaymentGateway implements IPaymentGateway {
   }
 
   /**
-   * Verify Tako webhook payload with timing-safe comparison
+   * Verify Tako webhook payload with HMAC-SHA256 and timing-safe comparison
+   * Supports X-Tako-Signature header: HMAC SHA-256 of raw body with Callback Secret
    */
   verifyWebhook(rawBody: string, signature: string, incomingSecret?: string): boolean {
-    const expected = this.webhookSecret?.trim();
-    if (!expected) return true;
+    const expectedSecret = this.webhookSecret?.trim();
+    if (!expectedSecret) return true;
 
+    // 1. Check HMAC-SHA256 signature (Tako standard: X-Tako-Signature)
+    if (signature && rawBody) {
+      try {
+        const computedHmac = crypto
+          .createHmac('sha256', expectedSecret)
+          .update(rawBody)
+          .digest('hex');
+
+        const bufComputed = Buffer.from(computedHmac);
+        const bufSignature = Buffer.from(signature.trim());
+        if (bufComputed.length === bufSignature.length && crypto.timingSafeEqual(bufComputed, bufSignature)) {
+          return true;
+        }
+      } catch (err) {
+        console.warn('Tako webhook HMAC verification error:', (err as Error).message);
+      }
+    }
+
+    // 2. Direct secret comparison fallback
     const candidate = (incomingSecret || signature || '').trim();
     if (!candidate) return false;
 
     try {
-      const bufExpected = Buffer.from(expected);
+      const bufExpected = Buffer.from(expectedSecret);
       const bufCandidate = Buffer.from(candidate);
-      if (bufExpected.length !== bufCandidate.length) return false;
-      return crypto.timingSafeEqual(bufExpected, bufCandidate);
+      if (bufExpected.length === bufCandidate.length) {
+        return crypto.timingSafeEqual(bufExpected, bufCandidate);
+      }
     } catch {
       return false;
     }
+
+    return false;
   }
 }
