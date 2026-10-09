@@ -242,10 +242,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {/* Important Notes if Available */}
           {notes.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>Petunjuk Aktivasi</span>
-              </h4>
               <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 rounded-2xl p-3.5 space-y-1.5">
                 {notes.map((note, idx) => (
                   <p key={idx} className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
@@ -255,12 +251,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
             </div>
           )}
-
-          {/* Guarantee info */}
-          <div className="flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>Garansi aktivasi 100% resmi</span>
-          </div>
         </div>
 
         {/* Footer Actions */}

@@ -1185,6 +1185,10 @@ export const server = {
         }
       }
 
+      if (!conv) {
+        throw new Error('Gagal memuat sesi percakapan bantuan.');
+      }
+
       const msgId = `msg_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
       const [newMsg] = await db
@@ -1443,6 +1447,10 @@ export const server = {
           })
           .where(eq(schema.supportConversations.id, conv.id));
         conv.status = 'OPEN';
+      }
+
+      if (!conv) {
+        throw new Error('Gagal menginisialisasi sesi percakapan.');
       }
 
       const messages = await db
