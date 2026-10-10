@@ -1,5 +1,7 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
+import { drizzle as drizzleHttp, type NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import { drizzle as drizzleTcp } from 'drizzle-orm/postgres-js';
+import postgres, { type Sql } from 'postgres';
 import * as schema from './schema';
 import '../lib/env'; // Ensure process.env is populated in Astro/Vite SSR
 import fs from 'node:fs';
@@ -46,18 +48,57 @@ const isSslRequired =
   dbUrl.includes('railway.app') ||
   dbUrl.includes('render.com');
 
-export const sqlClient = postgres(dbUrl, {
-  max: 10,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  ssl: isSslRequired ? 'require' : false,
-  prepare: false, // Essential for Neon pooler / PgBouncer
-  onnotice: () => {}, // Suppress benign PostgreSQL NOTICE messages (e.g. relation already exists)
-});
+/**
+ * Neon is reached over HTTPS (port 443) instead of the Postgres TCP port.
+ *
+ * Why: some networks filter non-web ports on the path to AWS, which is where
+ * Neon lives (e.g. 52.76.212.156:5432 is silently dropped while :443 is fine).
+ * A TCP pool then times out on connect, and because ensureDatabaseTables()
+ * swallows per-table errors the app still logs "verified successfully" while
+ * every later query fails — the homepage 500s while /user keeps returning 200.
+ *
+ * The Neon serverless driver is Neon's supported answer for exactly this case:
+ * it speaks Postgres over HTTP/WebSockets on 443, so no TCP port is needed.
+ * Queries are stateless, so an idle connection can never go stale.
+ *
+ * TCP (postgres.js) is kept for any non-Neon host, e.g. a local Postgres.
+ */
+const isNeonHost = (() => {
+  try {
+    return /(^|\.)neon\.tech$/i.test(new URL(dbUrl).hostname);
+  } catch {
+    return false;
+  }
+})();
 
-export const db = drizzle(sqlClient, { schema });
+export const sqlClient = isNeonHost
+  ? neon(dbUrl)
+  : postgres(dbUrl, {
+      max: 10,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      ssl: isSslRequired ? 'require' : false,
+      prepare: false, // Essential for Neon pooler / PgBouncer
+      onnotice: () => {}, // Suppress benign PostgreSQL NOTICE messages (e.g. relation already exists)
+    });
+
+// The two drivers need their matching Drizzle adapter — a postgres.js client
+// handed to the neon-http adapter (or vice versa) fails at query time.
+// Both adapters expose the same select/insert/update/delete builder surface, so
+// the exported type is pinned to one of them to keep call sites strongly typed.
+export const db = (
+  isNeonHost
+    ? drizzleHttp(sqlClient as NeonQueryFunction<false, false>, { schema })
+    : drizzleTcp(sqlClient as unknown as Sql, { schema })
+) as NeonHttpDatabase<typeof schema>;
 
 let initPromise: Promise<void> | null = null;
+
+/**
+ * Whether the last ensureDatabaseTables() run proved the database is reachable.
+ * Starts optimistic so callers can render before the first init completes.
+ */
+export let databaseReady = true;
 
 /**
  * Ensures required PostgreSQL tables and indexes exist on startup.
@@ -280,9 +321,28 @@ export async function ensureDatabaseTables(): Promise<void> {
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_support_conv_status ON support_conversations(status);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_support_messages_conv ON support_messages(conversation_id);`; } catch {}
 
-      console.log('[PostgreSQL] Database tables & indexes verified successfully.');
+      // Verify the connection for real. The individual statements above swallow
+      // their errors, so reaching this line does NOT mean the database is
+      // reachable — an unreachable DB would still print the old success message
+      // and every later query would fail. So probe it explicitly and say so.
+      const probe = await sqlClient`SELECT 1 AS ok`;
+      if (!Array.isArray(probe) || probe.length === 0) {
+        throw new Error('probe query returned no rows');
+      }
+      console.log(
+        `[PostgreSQL] Database reachable — tables & indexes verified via ${
+          isNeonHost ? 'Neon HTTP driver (port 443)' : 'TCP driver'
+        }.`
+      );
     } catch (err) {
-      console.error('[PostgreSQL] Database initialization notice:', (err as Error).message);
+      const message = (err as Error).message || String(err);
+      databaseReady = false;
+      console.error(
+        `[PostgreSQL] Database UNREACHABLE — tables not verified: ${message}\n` +
+          `[PostgreSQL] Check connectivity to ${
+            isNeonHost ? 'Neon (HTTPS/443)' : 'the database host'
+          }. Per-table errors above are suppressed, so this line is the real state.`
+      );
     }
   })();
 
