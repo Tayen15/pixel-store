@@ -41,10 +41,16 @@ export const StoreFooter: React.FC = () => {
               Live Chat Bantuan
             </a>
             <a
-              href="/admin"
+              href="/privacy"
               className="hover:text-zinc-700 dark:hover:text-zinc-200 transition underline underline-offset-2"
             >
-              Portal Admin
+              Kebijakan Privasi
+            </a>
+            <a
+              href="/terms"
+              className="hover:text-zinc-700 dark:hover:text-zinc-200 transition underline underline-offset-2"
+            >
+              Syarat & Ketentuan
             </a>
           </div>
         </div>

@@ -202,81 +202,118 @@ export class InsightXProClient {
 
 ---
 
-## 3. Astro Actions (`src/actions/index.ts`)
+## 3. Next.js Server Actions (`src/app/actions.ts`)
 
-Astro Actions provide end-to-end typed Remote Procedure Calls (RPC) with automatic input validation using Zod.
+Next.js Server Actions provide end-to-end typed RPC with automatic input validation using Zod schemas and async cookies.
 
 ```typescript
-import { defineAction } from 'astro:actions';
-import { z } from 'astro:schema';
+'use server';
 
-export const server = {
-  // Action 1: Create Checkout Order & Generate QRIS
-  createCheckout: defineAction({
-    input: z.object({
-      productId: z.number().int().positive(),
-      quantity: z.number().int().min(1).max(5).default(1),
-      email: z.string().email('Email tidak valid'),
-      whatsapp: z.string().regex(/^(\+62|62|08)[0-9]{8,13}$/, 'Nomor WhatsApp tidak valid'),
-    }),
-    handler: async (input, context) => {
-      // 1. Pre-flight check upstream balance
-      // 2. Calculate dynamic price (USDT -> IDR + Margin)
-      // 3. Request QRIS invoice from Payment Gateway
-      // 4. Record order into SQLite
-      // 5. Return QRIS string and orderNumber
-      return {
-        orderNumber: 'PIXEL-20261004-8821',
-        amountIdr: 149000,
-        qrCodeString: '00020101021226...',
-        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      };
-    },
-  }),
+import { z } from 'zod';
+import type { ActionResponse } from '@/types/actions';
 
-  // Action 2: Check Order Status (Real-time polling from frontend)
-  checkOrderStatus: defineAction({
-    input: z.object({
-      orderNumber: z.string().min(5),
-    }),
-    handler: async ({ orderNumber }) => {
-      // Returns order status and decrypted codes if COMPLETED
-      return {
-        orderNumber,
-        status: 'COMPLETED',
-        codes: ['WIN11-PRO-XXXX-YYYY-ZZZZ'],
-      };
-    },
-  }),
-};
+// Action 1: Create Checkout Order & Generate QRIS
+export async function createCheckout(input: {
+  productId: number;
+  quantity?: number;
+  email?: string;
+  whatsapp?: string;
+}): Promise<ActionResponse<{
+  orderNumber: string;
+  amountIdr: number;
+  qrCodeString: string;
+  paymentUrl: string;
+  expiresAt: string;
+}>> {
+  // 1. Zod validation
+  // 2. Pre-flight check upstream balance
+  // 3. Request QRIS invoice from Doit.id
+  // 4. Record order into PostgreSQL
+  // 5. Return QRIS payload and orderNumber
+}
+
+// Action 2: Get Order Status (Real-time polling from frontend)
+export async function getOrderStatus(input: {
+  orderNumber: string;
+}): Promise<ActionResponse<{
+  orderNumber: string;
+  status: string;
+  licenseCodes: string[];
+}>> {
+  // Returns order status and decrypted codes if COMPLETED
+}
 ```
 
 ---
 
-## 4. Webhook Route Handler (`src/pages/api/webhooks/doit.ts`)
+## 4. Webhook Route Handler (`src/app/api/webhooks/doit/route.ts`)
 
 ```typescript
-import type { APIRoute } from 'astro';
+import { NextRequest, NextResponse } from 'next/server';
+import { executeOrderFulfillment } from '@/lib/order/fulfillment';
 
-export const POST: APIRoute = async ({ request }) => {
+export async function POST(req: NextRequest) {
   try {
-    const rawPayload = await request.text();
-    const signature = request.headers.get('PayBridge-Signature') || '';
+    const rawBody = await req.text();
+    const signature = req.headers.get('PayBridge-Signature') || req.headers.get('x-callback-signature') || '';
 
-    // 1. Verify Doit.id HMAC signature (v1 = HMAC-SHA256(secret, t + "." + rawPayload))
+    // 1. Verify Doit.id HMAC signature
     // 2. Parse payload & fetch order by reference (orderNumber)
-    // 3. Atomic lock: PENDING_PAYMENT -> FULFILLING via PostgreSQL Compare-and-Swap
+    // 3. Atomic lock & execute fulfillment: executeOrderFulfillment(order.id, 'webhook_doit', rawBody)
     // 4. Call InsightXPro placeOrder with stored idempotency_key
     // 5. Save delivered keys, mark COMPLETED, and send automated email receipt
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json({ success: true });
   } catch (error) {
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return NextResponse.json({ error: (error as Error).message }, { status: 400 });
   }
-};
+}
 ```
+
+---
+
+## 5. Neon Managed Better Auth (`@neondatabase/auth`)
+
+### 5.1 Environment Configuration
+```bash
+NEON_AUTH_BASE_URL=https://ep-steep-mode-b38excf1.neonauth.c-4.ap-southeast-1.aws.neon.tech/neondb/auth
+NEON_AUTH_JWKS_URL=https://ep-steep-mode-b38excf1.neonauth.c-4.ap-southeast-1.aws.neon.tech/neondb/auth/.well-known/jwks.json
+NEON_AUTH_COOKIE_SECRET=<32-byte-base64-secret>
+```
+
+### 5.2 Server & Client Modules
+- **Server Instance (`src/lib/auth/server.ts`)**:
+  ```typescript
+  import { createNeonAuth } from '@neondatabase/auth/next/server';
+
+  export const auth = createNeonAuth({
+    baseUrl: process.env.NEON_AUTH_BASE_URL!,
+    cookies: { secret: process.env.NEON_AUTH_COOKIE_SECRET! },
+    logLevel: 'warn',
+  });
+  ```
+- **Client Instance (`src/lib/auth/client.ts`)**:
+  ```typescript
+  'use client';
+  import { createAuthClient } from '@neondatabase/auth/next';
+
+  export const authClient = createAuthClient();
+  ```
+- **Proxy Route Handler (`src/app/api/auth/[...path]/route.ts`)**:
+  ```typescript
+  import { auth } from '@/lib/auth/server';
+
+  export const { GET, POST } = auth.handler();
+  ```
+
+### 5.3 Server Actions Integration
+- `registerUser`: Invokes `neonAuth.signUp.email`, synchronizes local PostgreSQL record (`users` table), generates session token.
+- `loginUser`: Invokes `neonAuth.signIn.email`, validates customer credentials, sets 30-day session cookie.
+- `logoutUser`: Invokes `neonAuth.signOut()`, purges active session token from cookie and database.
+- `getCurrentUser`: Prioritizes `neonAuth.getSession()`, with transparent fallback to local session verification.
+
+### 5.4 Admin Plugin Integration (`auth.admin`)
+- `adminLogin`: Accepts `email` & `password`, verifies credentials via `neonAuth.signIn.email`, confirms `role: 'admin'`, and issues 7-day signed admin session.
+- `adminRegister`: Registers new administrator account in Better Auth and local DB using Master Secret PIN validation.
+- `adminSetUserRole`: Promotes customer account to admin or revokes role (`auth.admin.setRole({ userId, role })`).
+- `adminBanUser`: Bans user account via `auth.admin.banUser({ userId, banReason })`.
+- `getAdminSession`: Resolves authenticated admin identity across Neon Better Auth session and HTTP-only cookie tokens.

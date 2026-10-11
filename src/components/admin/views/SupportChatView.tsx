@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState, useEffect, useRef } from 'react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 import {
   MessageSquare,
   Search,
@@ -63,6 +65,7 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({ showToast, onN
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchedUsers, setSearchedUsers] = useState<any[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);

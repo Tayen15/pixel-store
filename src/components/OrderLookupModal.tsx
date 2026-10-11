@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState } from 'react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 import { X, Search, CheckCircle2, AlertCircle, Copy, Loader2, PackageCheck, ExternalLink, XCircle, CreditCard, Clock } from 'lucide-react';
 
 interface OrderLookupModalProps {

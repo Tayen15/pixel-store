@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 import { AdminSidebar, type AdminTab } from './admin/AdminSidebar';
 import { AdminHeader } from './admin/AdminHeader';
 import { OverviewView } from './admin/views/OverviewView';

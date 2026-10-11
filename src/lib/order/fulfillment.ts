@@ -152,7 +152,7 @@ export async function executeOrderFulfillment(
         customerEmail: order.customerEmail,
         productName: productRecord[0]?.name || 'Lisensi Digital',
         quantity: order.quantity,
-        totalIdr: order.amountIdr,
+        totalIdr: order.totalAmountIdr,
         licenseCodes: codes,
       }).catch((emailErr) => {
         console.warn(`[SMTP] Failed to send receipt for order ${order.orderNumber}:`, emailErr);

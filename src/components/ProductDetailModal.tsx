@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
 import { 
   X, 
@@ -173,13 +175,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="text-2xl font-black text-zinc-900 dark:text-white font-mono">
                 Rp {unitPrice.toLocaleString('id-ID')}
               </div>
-            </div>
-
-            <div className="text-right">
-              <span className="text-[10px] text-zinc-400 uppercase font-mono block">Tarif Wholesale:</span>
-              <span className="text-xs font-mono font-semibold text-zinc-700 dark:text-zinc-300">
-                ≈ {product.basePriceUsdt.toFixed(2)} USDT
-              </span>
             </div>
           </div>
 

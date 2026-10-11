@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import {
   Settings,
@@ -18,7 +20,7 @@ import {
   ExternalLink,
   CreditCard,
 } from 'lucide-react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 
 interface StoreSettingsViewProps {
   config: any;

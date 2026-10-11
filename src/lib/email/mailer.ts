@@ -248,3 +248,111 @@ export async function sendTestEmail(targetEmail: string): Promise<{ success: boo
     text: `Uji coba SMTP Pixel Store berhasil dikirim pada ${new Date().toLocaleString('id-ID')}.`,
   });
 }
+
+export interface PasswordResetEmailParams {
+  customerEmail: string;
+  customerName?: string;
+  resetCode: string;
+  resetUrl?: string;
+}
+
+/**
+ * Sends a password reset verification code email.
+ */
+export async function sendPasswordResetEmail(params: PasswordResetEmailParams): Promise<{ success: boolean; error?: string }> {
+  const { customerEmail, customerName = 'Pelanggan', resetCode, resetUrl } = params;
+
+  const formattedDate = new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Jakarta',
+  }).format(new Date());
+
+  const html = `
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Kata Sandi Akun Pixel Store</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #09090b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #f4f4f5; line-height: 1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #09090b; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <!-- Main Container -->
+        <table role="presentation" width="100%" style="max-width: 520px; background-color: #121215; border: 1px solid #27272a; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);">
+          
+          <!-- Header Banner -->
+          <tr>
+            <td style="background: linear-gradient(180deg, #18181b 0%, #121215 100%); padding: 32px 30px; text-align: center; border-bottom: 1px solid #27272a;">
+              <div style="display: inline-block; background-color: #ffffff; color: #09090b; font-weight: 900; font-size: 18px; width: 42px; height: 42px; line-height: 42px; border-radius: 12px; text-align: center; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);">P</div>
+              <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">PIXEL STORE</h1>
+              <p style="margin: 6px 0 0 0; font-size: 13px; color: #a1a1aa;">Pengaturan Ulang Kata Sandi Akun</p>
+            </td>
+          </tr>
+
+          <!-- Content Body -->
+          <tr>
+            <td style="padding: 32px 30px;">
+              <p style="margin: 0 0 14px 0; font-size: 15px; color: #f4f4f5;">Halo <strong>${customerName}</strong>,</p>
+              <p style="margin: 0 0 24px 0; font-size: 13.5px; color: #a1a1aa; line-height: 1.6;">
+                Kami menerima permintaan untuk mengatur ulang kata sandi akun Pixel Store Anda. Masukkan kode verifikasi 6 digit di bawah ini untuk melanjutkan:
+              </p>
+
+              <!-- OTP Code Card -->
+              <div style="background-color: #18181b; border: 1px solid #27272a; border-radius: 14px; padding: 22px; text-align: center; margin: 24px 0;">
+                <span style="display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #71717a; font-weight: 700; margin-bottom: 8px;">Kode Verifikasi Anda</span>
+                <div style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #ffffff; padding: 4px 0;">
+                  ${resetCode}
+                </div>
+                <span style="display: inline-block; font-size: 11.5px; color: #e4e4e7; background-color: #27272a; padding: 4px 12px; border-radius: 20px; margin-top: 10px;">
+                  Berlaku selama 15 menit
+                </span>
+              </div>
+
+              ${resetUrl ? `
+              <!-- Button CTA -->
+              <div style="text-align: center; margin: 26px 0 20px 0;">
+                <a href="${resetUrl}" target="_blank" style="background-color: #ffffff; color: #09090b; text-decoration: none; font-weight: 700; font-size: 13px; padding: 12px 28px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 14px rgba(255, 255, 255, 0.1);">
+                  Buka Halaman Reset Kata Sandi
+                </a>
+              </div>
+              ` : ''}
+
+              <!-- Security Warning -->
+              <div style="background-color: #18181b/60; border-left: 3px solid #71717a; padding: 12px 14px; margin-top: 24px; border-radius: 6px;">
+                <p style="margin: 0; font-size: 12px; color: #71717a; line-height: 1.5;">
+                  <strong>Peringatan Keamanan:</strong> Jangan berikan kode ini kepada siapa pun, termasuk staf atau admin Pixel Store. Jika Anda tidak melakukan permintaan ini, Anda dapat mengabaikan email ini dengan aman.
+                </p>
+              </div>
+
+              <p style="margin: 22px 0 0 0; font-size: 11px; color: #52525b; text-align: center;">
+                Waktu Permintaan: ${formattedDate} WIB
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #0d0d10; padding: 20px 30px; text-align: center; border-top: 1px solid #1e1e24; font-size: 11.5px; color: #52525b;">
+              &copy; ${new Date().getFullYear()} Pixel Store &bull; <a href="https://pixelstore.oktaa.my.id" style="color: #a1a1aa; text-decoration: none;">pixelstore.oktaa.my.id</a>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `;
+
+  return sendEmail({
+    to: customerEmail,
+    subject: `[Pixel Store] ${resetCode} adalah Kode Verifikasi Reset Kata Sandi Anda`,
+    html,
+    text: `Kode verifikasi reset kata sandi Pixel Store Anda: ${resetCode}\n\nKode ini berlaku selama 15 menit.\nJika Anda tidak meminta pengaturan ulang kata sandi, abaikan email ini.`,
+  });
+}
+

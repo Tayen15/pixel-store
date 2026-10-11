@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState, useEffect } from 'react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 import QRCode from 'qrcode';
 import { 
   X, 
@@ -561,9 +563,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="pt-3 border-t border-zinc-200 dark:border-zinc-700/60 flex justify-between items-center">
                   <div>
                     <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 block">Total Pembayaran</span>
-                    <span className="text-[10px] text-zinc-400 font-mono">
-                      ≈ {(product.basePriceUsdt * quantity).toFixed(2)} USDT
-                    </span>
                   </div>
                   <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
                     Rp {totalAmount.toLocaleString('id-ID')}

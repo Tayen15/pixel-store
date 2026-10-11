@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect } from "react";
 import {
   Search,
@@ -11,6 +13,8 @@ import {
   Star,
   MessageCircle,
   AlertCircle,
+  X,
+  RefreshCw,
 } from "lucide-react";
 import { ServiceLogo } from "./ServiceLogo";
 import { CheckoutModal, type PendingOrderSession } from "./CheckoutModal";
@@ -23,7 +27,7 @@ import { UserAccountModal, type AuthenticatedUser } from "./UserAccountModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { StoreNavbar } from "./layout/StoreNavbar";
 import { StoreFooter } from "./layout/StoreFooter";
-import { actions } from "astro:actions";
+import { actions } from "@/actions";
 
 export interface ProductItem {
   id: number;
@@ -66,7 +70,10 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
   isPaymentEnabled = true,
   paymentDisabledReason,
 }) => {
-  const [products] = useState<ProductItem[]>(initialProducts);
+  const [products, setProducts] = useState<ProductItem[]>(initialProducts);
+  const [isReloadingPrice, setIsReloadingPrice] = useState<boolean>(false);
+  const [lastPriceReload, setLastPriceReload] = useState<string>('');
+  const [reloadToast, setReloadToast] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("Semua");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(
@@ -80,6 +87,31 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(
     null,
   );
+
+  const handleReloadPrices = async () => {
+    if (isReloadingPrice) return;
+    setIsReloadingPrice(true);
+    setReloadToast(null);
+    try {
+      const res = await actions.reloadStoreCatalog();
+      if (res?.data?.products) {
+        setProducts(res.data.products);
+        if (res.data.updatedAt) {
+          setLastPriceReload(res.data.updatedAt);
+        }
+        setReloadToast('Harga dan kuota katalog berhasil diperbarui.');
+        setTimeout(() => setReloadToast(null), 3500);
+      } else if (res?.error) {
+        setReloadToast('Gagal: ' + res.error.message);
+        setTimeout(() => setReloadToast(null), 3500);
+      }
+    } catch (err) {
+      setReloadToast('Gagal memperbarui harga terkini.');
+      setTimeout(() => setReloadToast(null), 3500);
+    } finally {
+      setIsReloadingPrice(false);
+    }
+  };
 
   // Check customer session on mount
   useEffect(() => {
@@ -182,46 +214,113 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
           </div>
         )}
 
-        {/* Category Filter & Search */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3.5 mb-7">
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 ${
-                  selectedCategory === cat
-                    ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-xs"
-                    : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="relative w-full sm:w-64">
+        {/* Search Product Bar */}
+        <div className="mb-6 space-y-3">
+          <div className="relative w-full">
             <input
               type="text"
-              placeholder="Cari layanan..."
+              placeholder="Cari nama produk atau langganan digital (contoh: Gemini, CapCut, Canva, VPN)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3.5 py-2 rounded-xl text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition"
+              className="w-full pl-11 pr-10 py-3 rounded-2xl text-xs sm:text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 dark:focus:ring-white/10 focus:border-zinc-400 dark:focus:border-zinc-600 transition shadow-xs placeholder:text-zinc-400"
             />
-            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
+            <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-3.5" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3.5 top-3 p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                title="Hapus pencarian"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Category Filter & Counter */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-0.5">
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer ${
+                    selectedCategory === cat
+                      ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-xs"
+                      : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 ml-auto sm:ml-0">
+              <div className="text-[11px] text-zinc-500 font-mono">
+                {searchQuery ? (
+                  <span>
+                    Ditemukan <strong className="text-zinc-900 dark:text-white">{filteredProducts.length}</strong> produk
+                  </span>
+                ) : (
+                  <span>
+                    Total <strong className="text-zinc-900 dark:text-white">{filteredProducts.length}</strong> produk
+                  </span>
+                )}
+              </div>
+
+              {/* Action Button: Reload Price */}
+              <button
+                type="button"
+                onClick={handleReloadPrices}
+                disabled={isReloadingPrice}
+                className="px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Muat ulang harga dan stok terbaru dari database"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${
+                    isReloadingPrice ? "animate-spin text-emerald-500" : "text-zinc-400"
+                  }`}
+                />
+                <span className="hidden sm:inline">
+                  {isReloadingPrice ? "Memperbarui..." : "Reload Harga"}
+                </span>
+                <span className="sm:hidden">
+                  {isReloadingPrice ? "..." : "Reload"}
+                </span>
+                {lastPriceReload && (
+                  <span className="text-[10px] text-zinc-400 font-mono hidden md:inline">
+                    • {lastPriceReload}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Product Grid */}
         {filteredProducts.length === 0 ? (
-          <div className="text-center py-20 bg-white dark:bg-zinc-900/40 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-8 space-y-2">
+          <div className="text-center py-20 bg-white dark:bg-zinc-900/40 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-8 space-y-3">
             <Layers className="w-8 h-8 text-zinc-400 mx-auto" />
             <h4 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
               Tidak ada produk yang sesuai
             </h4>
-            <p className="text-xs text-zinc-500">
-              Coba ganti kata kunci pencarian atau pilih kategori lain.
+            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+              {searchQuery
+                ? `Tidak ditemukan produk dengan kata kunci "${searchQuery}". Coba kata kunci lain atau reset pencarian.`
+                : "Coba ganti kata kunci pencarian atau pilih kategori lain."}
             </p>
+            {(searchQuery || selectedCategory !== "Semua") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setSelectedCategory("Semua");
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                <span>Reset Pencarian</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
@@ -310,9 +409,6 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
                       <div className="text-base font-extrabold text-zinc-900 dark:text-white leading-tight font-mono">
                         Rp {item.retailPriceIdr.toLocaleString("id-ID")}
                       </div>
-                      <span className="text-[10px] text-zinc-400 font-mono">
-                        ≈ {item.basePriceUsdt.toFixed(2)} USDT
-                      </span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
@@ -395,6 +491,46 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
         onClose={() => setIsUserModalOpen(false)}
         onUserChanged={setCurrentUser}
       />
+
+      {/* Floating Action Button: Reload Price (Pojok Kanan Bawah) */}
+      <div className="fixed bottom-6 right-6 z-30 animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <button
+          type="button"
+          onClick={handleReloadPrices}
+          disabled={isReloadingPrice}
+          className="group px-3.5 py-2 rounded-full border border-zinc-200/90 dark:border-zinc-800/90 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md hover:bg-white dark:hover:bg-zinc-850 text-zinc-800 dark:text-zinc-200 text-xs font-semibold flex items-center gap-2 shadow-lg shadow-zinc-950/5 dark:shadow-black/40 transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-60"
+          title="Klik untuk memuat ulang harga dan ketersediaan terbaru"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${
+              isReloadingPrice
+                ? "animate-spin text-emerald-500"
+                : "text-zinc-500 group-hover:rotate-180 transition-transform duration-500"
+            }`}
+          />
+          <span className="hidden sm:inline">
+            {isReloadingPrice ? "Memperbarui Harga..." : "Reload Harga"}
+          </span>
+          <span className="sm:hidden">
+            {isReloadingPrice ? "Update..." : "Reload"}
+          </span>
+          {lastPriceReload && (
+            <span className="text-[10px] text-zinc-400 font-mono hidden lg:inline">
+              ({lastPriceReload})
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Floating Toast Notification */}
+      {reloadToast && (
+        <div className="fixed top-20 right-6 z-50 animate-in fade-in slide-in-from-top-3 duration-200 pointer-events-none">
+          <div className="px-4 py-2.5 rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 text-xs font-semibold shadow-xl flex items-center gap-2 border border-zinc-700/50 dark:border-zinc-200/50">
+            <Check className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-600" />
+            <span>{reloadToast}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

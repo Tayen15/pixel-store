@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import {
   Search,
@@ -14,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { ServiceLogo } from '../../ServiceLogo';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 
 interface CatalogViewProps {
   products: any[];

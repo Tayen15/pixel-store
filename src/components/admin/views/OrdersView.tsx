@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import {
   Search,
@@ -15,7 +17,7 @@ import {
   RotateCcw,
   Mail,
 } from 'lucide-react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 
 interface OrdersViewProps {
   orders: any[];

@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState } from 'react';
 import {
   Zap,
@@ -11,7 +13,7 @@ import {
   ShieldCheck,
   CheckCircle2,
 } from 'lucide-react';
-import { actions } from 'astro:actions';
+import { actions } from '@/actions';
 import { ServiceLogo } from '../../ServiceLogo';
 
 interface PricingEngineViewProps {
