@@ -58,11 +58,11 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
     simCostIdr * ((Number(marginPercent) || 0) / 100)
   );
   const simFixedIdr = Number(fixedFee) || 0;
-  const simSubtotalPreTako = simCostIdr + simMarginIdr + simFixedIdr;
-  const simTakoFeeIdr = Math.round(
-    simSubtotalPreTako * ((Number(gatewayFeePercent) || 0) / 100)
+  const simSubtotalPreGateway = simCostIdr + simMarginIdr + simFixedIdr;
+  const simGatewayFeeIdr = Math.round(
+    simSubtotalPreGateway * ((Number(gatewayFeePercent) || 0) / 100)
   );
-  const simRawRetail = simSubtotalPreTako + simTakoFeeIdr;
+  const simRawRetail = simSubtotalPreGateway + simGatewayFeeIdr;
   const simRetailPrice = Math.ceil(simRawRetail / 1000) * 1000;
   const simRoundingSurplus = simRetailPrice - simRawRetail;
   const simNetProfit = simMarginIdr + simRoundingSurplus;
@@ -148,11 +148,11 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
               </p>
             </div>
 
-            {/* Biaya Penarikan Tako */}
+            {/* Biaya Gateway & Penarikan Doit.id */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <label className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  Tier Biaya Penarikan Dana Tako (%):
+                  Alokasi Biaya Gateway Doit.id & Penarikan (%):
                 </label>
                 <span className="font-mono font-bold text-blue-600 dark:text-blue-400 text-sm">
                   {gatewayFeePercent}%
@@ -163,15 +163,14 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
                 onChange={(e) => setGatewayFeePercent(Number(e.target.value))}
                 className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-medium focus:outline-none"
               >
-                <option value={5.0}>Tier Normal (5.0% - Penarikan Reguler)</option>
-                <option value={4.9}>Tier Silver (4.9% - Penarikan &gt; Rp 1 Juta)</option>
-                <option value={4.8}>Tier Gold (4.8% - Penarikan &gt; Rp 3 Juta)</option>
-                <option value={4.7}>Tier Platinum (4.7% - Penarikan &gt; Rp 5 Juta)</option>
-                <option value={4.6}>Tier Diamond (4.6% - Penarikan &gt; Rp 8 Juta)</option>
-                <option value={4.5}>Tier VIP (4.5% - Penarikan &gt; Rp 10 Juta)</option>
+                <option value={0.7}>MDR QRIS Standar (0.7% - Biaya BI)</option>
+                <option value={1.5}>MDR + Buffer Operasional (1.5%)</option>
+                <option value={2.5}>MDR + Penarikan Reguler (2.5%)</option>
+                <option value={5.0}>Tier Proteksi Maksimal (5.0%)</option>
+                <option value={4.5}>Tier VIP (4.5%)</option>
               </select>
               <p className="text-[11px] text-zinc-400">
-                Otomatis dihitung ke harga jual pembeli agar margin toko tidak terpotong saat menarik saldo Tako ke rekening bank.
+                Otomatis dihitung ke harga jual pembeli agar margin toko tidak terpotong saat menerima pembayaran atau menarik saldo Doit.id.
               </p>
             </div>
 
@@ -287,16 +286,16 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
             )}
 
             <div className="flex justify-between text-zinc-500 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
-              <span>Subtotal Sebelum Fee Tako:</span>
+              <span>Subtotal Sebelum Fee Gateway:</span>
               <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">
-                Rp {simSubtotalPreTako.toLocaleString('id-ID')}
+                Rp {simSubtotalPreGateway.toLocaleString('id-ID')}
               </span>
             </div>
 
             <div className="flex justify-between">
-              <span className="text-zinc-500">4. Alokasi Biaya Penarikan Tako ({gatewayFeePercent}%):</span>
+              <span className="text-zinc-500">4. Alokasi Biaya Gateway Doit.id ({gatewayFeePercent}%):</span>
               <span className="font-mono font-medium text-blue-600 dark:text-blue-400">
-                +Rp {simTakoFeeIdr.toLocaleString('id-ID')}
+                +Rp {simGatewayFeeIdr.toLocaleString('id-ID')}
               </span>
             </div>
 
@@ -322,7 +321,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
                 Total Keuntungan Bersih Toko:
               </div>
               <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                100% aman masuk rekening tanpa nombok fee transfer Tako
+                100% aman masuk rekening tanpa nombok fee transfer Doit.id
               </div>
             </div>
             <div className="font-mono text-lg font-black text-emerald-600 dark:text-emerald-400">

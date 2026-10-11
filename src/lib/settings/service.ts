@@ -6,7 +6,7 @@ export interface PricingSettings {
   autoFxRate: boolean;
   fxBufferPercent: number;
   marginPercent: number;
-  gatewayFeePercent: number; // Persentase biaya penarikan Tako (normal 5.0%, tiered 4.5% - 4.9%)
+  gatewayFeePercent: number; // Persentase biaya gateway Doit.id & operasional (mis. MDR QRIS 0.7% atau custom buffer)
   fixedFeeIdr: number;
   roundingStep: number;
 }
@@ -18,6 +18,8 @@ export interface StoreSettings {
   announcement: string;
   isStoreOpen: boolean;
   qrisNmid: string;
+  isPaymentEnabled: boolean;
+  paymentDisabledReason?: string;
 }
 
 export interface OrderSettings {
@@ -46,7 +48,7 @@ function getDefaultConfig(): SystemConfig {
       autoFxRate: true,
       fxBufferPercent: 0.5,
       marginPercent: Number(process.env.PROFIT_MARGIN_PERCENT || 20),
-      gatewayFeePercent: Number(process.env.GATEWAY_FEE_PERCENT || 5.0),
+      gatewayFeePercent: Number(process.env.GATEWAY_FEE_PERCENT || 0.7),
       fixedFeeIdr: Number(process.env.FIXED_PAYMENT_FEE_IDR || 0),
       roundingStep: 1000,
     },
@@ -57,6 +59,8 @@ function getDefaultConfig(): SystemConfig {
       announcement: process.env.STORE_ANNOUNCEMENT || 'Pengiriman otomatis 24/7 aktif via QRIS.',
       isStoreOpen: true,
       qrisNmid: process.env.QRIS_NMID || 'ID1020021303845',
+      isPaymentEnabled: true,
+      paymentDisabledReason: 'Sistem pembayaran sedang dinonaktifkan sementara untuk pemeliharaan/migrasi gateway.',
     },
     orders: {
       expiryMinutes: Number(process.env.ORDER_EXPIRY_MINUTES || 15),

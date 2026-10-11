@@ -8,7 +8,11 @@ import { executeOrderFulfillment } from '@/lib/order/fulfillment';
 export const POST: APIRoute = async ({ request }) => {
   try {
     const rawBody = await request.text();
-    const signature = request.headers.get('x-callback-signature') || '';
+    const signature =
+      request.headers.get('paybridge-signature') ||
+      request.headers.get('PayBridge-Signature') ||
+      request.headers.get('x-callback-signature') ||
+      '';
 
     const gateway = getPaymentGateway();
     const isValid = gateway.verifyWebhook(rawBody, signature);
@@ -20,8 +24,16 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const payload = JSON.parse(rawBody);
-    const orderNumber = payload.merchant_ref || payload.order_id || payload.orderNumber;
-    const paymentStatus = payload.status; // e.g. 'PAID', 'settlement', 'success'
+    if (payload.type === 'webhook.test') {
+      return new Response(JSON.stringify({ success: true, message: 'Webhook test received' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const data = payload.data || payload;
+    const orderNumber = data.reference || payload.merchant_ref || payload.order_id || payload.orderNumber;
+    const paymentStatus = String(data.status || payload.status || '').toLowerCase();
 
     if (!orderNumber) {
       return new Response(JSON.stringify({ error: 'Missing order reference' }), {
@@ -54,7 +66,9 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Check if status represents successful payment
-    const isPaid = ['PAID', 'settlement', 'success', 'COMPLETED'].includes(paymentStatus);
+    const isPaid =
+      ['paid', 'settlement', 'success', 'completed'].includes(paymentStatus) ||
+      payload.type === 'payment.paid';
     if (!isPaid) {
       return new Response(JSON.stringify({ received: true, status: paymentStatus }), {
         status: 200,

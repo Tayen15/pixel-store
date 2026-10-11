@@ -249,6 +249,13 @@ export const server = {
         throw new Error('Toko sedang dalam pemeliharaan sistem. Silakan coba kembali nanti.');
       }
 
+      if (config.store.isPaymentEnabled === false) {
+        throw new Error(
+          config.store.paymentDisabledReason?.trim() ||
+            'Sistem pembayaran sedang dinonaktifkan sementara untuk pemeliharaan/migrasi gateway. Silakan hubungi CS atau coba beberapa saat lagi.'
+        );
+      }
+
       if (input.quantity > config.orders.maxQuantityPerOrder) {
         throw new Error(`Maksimal pembelian adalah ${config.orders.maxQuantityPerOrder} lisensi per transaksi.`);
       }
@@ -411,6 +418,7 @@ export const server = {
 
   /**
    * Action: Check order status and retrieve license codes if completed
+   * Automatically detects and updates EXPIRED and CANCELED status
    */
   getOrderStatus: defineAction({
     input: z.object({
@@ -428,30 +436,101 @@ export const server = {
 
       let order = records[0];
 
-      // Live verification with payment gateway if pending
-      if (order.status === 'PENDING_PAYMENT') {
-        const payments = await db
-          .select()
-          .from(schema.payments)
-          .where(eq(schema.payments.orderId, order.id));
+      const payments = await db
+        .select()
+        .from(schema.payments)
+        .where(eq(schema.payments.orderId, order.id));
 
-        const payment = payments[0];
-        if (payment?.gatewayProvider === 'tako' && payment.gatewayReference) {
+      const payment = payments[0];
+
+      // Auto-expire check: if order is PENDING_PAYMENT and expiry timestamp has passed
+      if (order.status === 'PENDING_PAYMENT' && payment?.expiresAt) {
+        const expiryTime = new Date(payment.expiresAt).getTime();
+        if (!isNaN(expiryTime) && Date.now() > expiryTime) {
+          await db
+            .update(schema.orders)
+            .set({
+              status: 'EXPIRED',
+              failureReason: 'Batas waktu pembayaran telah kadaluarsa',
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(schema.orders.id, order.id));
+
+          await db
+            .update(schema.payments)
+            .set({ status: 'EXPIRED' })
+            .where(eq(schema.payments.id, payment.id));
+
+          order.status = 'EXPIRED';
+          order.failureReason = 'Batas waktu pembayaran telah kadaluarsa';
+        }
+      }
+
+      // Live verification with payment gateway if still pending
+      if (order.status === 'PENDING_PAYMENT' && payment) {
+        if (payment.gatewayProvider === 'doit' && payment.gatewayReference) {
+          const gateway = getPaymentGateway();
+          if ('checkPaymentStatus' in gateway) {
+            try {
+              const liveStatus = await (gateway as any).checkPaymentStatus(payment.gatewayReference);
+              if (liveStatus?.status === 'paid') {
+                // Atomic race-free fulfillment (prevents duplicate fulfillment with webhook)
+                await executeOrderFulfillment(order.id, 'client_polling');
+
+                const updatedRecords = await db
+                  .select()
+                  .from(schema.orders)
+                  .where(eq(schema.orders.id, order.id));
+
+                if (updatedRecords[0]) {
+                  order = updatedRecords[0];
+                }
+              } else if (liveStatus?.status === 'canceled') {
+                await db
+                  .update(schema.orders)
+                  .set({
+                    status: 'CANCELED',
+                    failureReason: 'Dibatalkan pada sistem pembayaran',
+                    updatedAt: new Date().toISOString(),
+                  })
+                  .where(eq(schema.orders.id, order.id));
+                order.status = 'CANCELED';
+                order.failureReason = 'Dibatalkan pada sistem pembayaran';
+              } else if (liveStatus?.status === 'expired') {
+                await db
+                  .update(schema.orders)
+                  .set({
+                    status: 'EXPIRED',
+                    failureReason: 'Batas waktu pembayaran telah kadaluarsa',
+                    updatedAt: new Date().toISOString(),
+                  })
+                  .where(eq(schema.orders.id, order.id));
+                order.status = 'EXPIRED';
+                order.failureReason = 'Batas waktu pembayaran telah kadaluarsa';
+              }
+            } catch (gwErr) {
+              console.warn('Gateway status polling check skipped:', (gwErr as Error).message);
+            }
+          }
+        } else if (payment.gatewayProvider === 'tako' && payment.gatewayReference) {
           const gateway = getPaymentGateway();
           if ('checkTransactionStatus' in gateway) {
-            const liveStatus = await (gateway as any).checkTransactionStatus(payment.gatewayReference);
-            if (liveStatus?.status === 'success') {
-              // Atomic race-free fulfillment (prevents duplicate fulfillment with webhook)
-              await executeOrderFulfillment(order.id, 'client_polling');
+            try {
+              const liveStatus = await (gateway as any).checkTransactionStatus(payment.gatewayReference);
+              if (liveStatus?.status === 'success') {
+                await executeOrderFulfillment(order.id, 'client_polling');
 
-              const updatedRecords = await db
-                .select()
-                .from(schema.orders)
-                .where(eq(schema.orders.id, order.id));
+                const updatedRecords = await db
+                  .select()
+                  .from(schema.orders)
+                  .where(eq(schema.orders.id, order.id));
 
-              if (updatedRecords[0]) {
-                order = updatedRecords[0];
+                if (updatedRecords[0]) {
+                  order = updatedRecords[0];
+                }
               }
+            } catch (gwErr) {
+              console.warn('Tako polling check skipped:', (gwErr as Error).message);
             }
           }
         }
@@ -468,6 +547,7 @@ export const server = {
 
       return {
         orderNumber: order.orderNumber,
+        productId: order.productId,
         productName: order.productName,
         quantity: order.quantity,
         totalAmountIdr: order.totalAmountIdr,
@@ -476,6 +556,75 @@ export const server = {
         customerEmail: order.customerEmail,
         createdAt: order.createdAt,
         failureReason: order.failureReason,
+        paymentDetails: payment ? {
+          amountIdr: payment.amountIdr,
+          qrCodeString: payment.qrCodeString,
+          paymentUrl: payment.paymentUrl,
+          expiresAt: payment.expiresAt,
+          gatewayProvider: payment.gatewayProvider,
+        } : null,
+      };
+    },
+  }),
+
+  /**
+   * Action: Cancel a pending order by customer/buyer
+   */
+  cancelOrder: defineAction({
+    input: z.object({
+      orderNumber: z.string().min(5),
+      reason: z.string().optional(),
+    }),
+    handler: async ({ orderNumber, reason }, context) => {
+      const records = await db
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.orderNumber, orderNumber));
+
+      if (records.length === 0) {
+        throw new Error('Pesanan tidak ditemukan.');
+      }
+
+      const order = records[0];
+
+      if (order.status === 'COMPLETED') {
+        throw new Error('Pesanan telah selesai dan lisensi aktif, tidak dapat dibatalkan.');
+      }
+
+      if (order.status === 'CANCELED') {
+        return { success: true, message: 'Pesanan sudah dibatalkan.', status: 'CANCELED', orderNumber };
+      }
+
+      // Check user session if order is linked to a registered user
+      const userToken = context.cookies.get(USER_COOKIE_NAME)?.value;
+      const currentUser = await getUserFromSession(userToken);
+      if (currentUser && order.userId && order.userId !== currentUser.id) {
+        throw new Error('Anda tidak memiliki izin untuk membatalkan pesanan ini.');
+      }
+
+      const failureReason = reason?.trim() || 'Dibatalkan oleh pelanggan';
+
+      await db
+        .update(schema.orders)
+        .set({
+          status: 'CANCELED',
+          failureReason,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.orders.id, order.id));
+
+      await db
+        .update(schema.payments)
+        .set({
+          status: 'EXPIRED',
+        })
+        .where(eq(schema.payments.orderId, order.id));
+
+      return {
+        success: true,
+        orderNumber,
+        status: 'CANCELED',
+        message: 'Pesanan berhasil dibatalkan.',
       };
     },
   }),
@@ -534,8 +683,21 @@ export const server = {
               order.idempotencyKey
             );
 
-            const supplierOrderId = String(supplierRes.order_id);
-            const codes = supplierRes.codes || [];
+            const supplierOrderId = String(
+              supplierRes.order_id ?? 
+              supplierRes.order?.order_id ?? 
+              supplierRes.order?.id ?? 
+              supplierRes.id ?? 
+              'UNKNOWN'
+            );
+            const rawCodes = 
+              supplierRes.codes?.length ? supplierRes.codes :
+              supplierRes.order?.codes?.length ? supplierRes.order.codes :
+              supplierRes.order?.delivered_codes?.length ? supplierRes.order.delivered_codes :
+              supplierRes.order?.coupons?.length ? supplierRes.order.coupons :
+              supplierRes.delivered_codes?.length ? supplierRes.delivered_codes :
+              [];
+            const codes = Array.isArray(rawCodes) ? rawCodes : [rawCodes];
 
             if (codes.length > 0) {
               await db
@@ -725,10 +887,17 @@ export const server = {
         ? product.customRetailPriceIdr
         : (product.retailPriceIdr || autoPricing.unitPriceIdr);
 
+      const config = await getSystemConfig();
+      const isPaymentEnabled = config.store.isPaymentEnabled !== false;
+      const paymentDisabledReason = config.store.paymentDisabledReason || 'Sistem pembayaran sedang dinonaktifkan sementara untuk pemeliharaan/migrasi.';
+
       let canPurchase = Boolean(product.inStock && (product.stock === null || product.stock >= quantity));
       let unavailableReason: string | null = null;
 
-      if (!canPurchase) {
+      if (!isPaymentEnabled) {
+        canPurchase = false;
+        unavailableReason = paymentDisabledReason;
+      } else if (!canPurchase) {
         unavailableReason = 'Stok produk habis';
       } else {
         try {
@@ -753,6 +922,8 @@ export const server = {
         isCustomPrice: Boolean(product.customRetailPriceIdr && product.customRetailPriceIdr > 0),
         canPurchase,
         unavailableReason,
+        isPaymentEnabled,
+        paymentDisabledReason: isPaymentEnabled ? null : paymentDisabledReason,
       };
     },
   }),
@@ -906,19 +1077,35 @@ export const server = {
             order.idempotencyKey
           );
 
-          if (supplierRes.codes && supplierRes.codes.length > 0) {
+          const supplierOrderId = String(
+            supplierRes.order_id ?? 
+            supplierRes.order?.order_id ?? 
+            supplierRes.order?.id ?? 
+            supplierRes.id ?? 
+            'UNKNOWN'
+          );
+          const rawCodes = 
+            supplierRes.codes?.length ? supplierRes.codes :
+            supplierRes.order?.codes?.length ? supplierRes.order.codes :
+            supplierRes.order?.delivered_codes?.length ? supplierRes.order.delivered_codes :
+            supplierRes.order?.coupons?.length ? supplierRes.order.coupons :
+            supplierRes.delivered_codes?.length ? supplierRes.delivered_codes :
+            [];
+          const codes = Array.isArray(rawCodes) ? rawCodes : [rawCodes];
+
+          if (codes.length > 0) {
             await db
               .update(schema.orders)
               .set({
                 status: 'COMPLETED',
-                supplierOrderId: String(supplierRes.order_id),
-                licenseCodes: JSON.stringify(supplierRes.codes),
+                supplierOrderId,
+                licenseCodes: JSON.stringify(codes),
                 failureReason: null,
                 fulfilledAt: new Date().toISOString(),
               })
               .where(eq(schema.orders.id, order.id));
 
-            return { success: true, codes: supplierRes.codes };
+            return { success: true, codes };
           }
         }
       } catch (err) {
@@ -1003,6 +1190,8 @@ export const server = {
       announcement: z.string().default(''),
       isStoreOpen: z.boolean().default(true),
       qrisNmid: z.string().default('ID1020021303845'),
+      isPaymentEnabled: z.boolean().default(true),
+      paymentDisabledReason: z.string().optional(),
       expiryMinutes: z.number().int().min(5).max(120).default(15),
       maxQuantityPerOrder: z.number().int().min(1).max(20).default(5),
     }),
@@ -1018,12 +1207,36 @@ export const server = {
         announcement: input.announcement,
         isStoreOpen: input.isStoreOpen,
         qrisNmid: input.qrisNmid,
+        isPaymentEnabled: input.isPaymentEnabled,
+        paymentDisabledReason: input.paymentDisabledReason,
       });
       await updateSystemSection('orders', {
         expiryMinutes: input.expiryMinutes,
         maxQuantityPerOrder: input.maxQuantityPerOrder,
       });
       return { success: true };
+    },
+  }),
+
+  /**
+   * Action: Quick toggle payment gateway system active/disabled
+   */
+  adminTogglePaymentStatus: defineAction({
+    input: z.object({
+      isPaymentEnabled: z.boolean(),
+      paymentDisabledReason: z.string().optional(),
+    }),
+    handler: async ({ isPaymentEnabled, paymentDisabledReason }, context) => {
+      const sessionToken = context.cookies.get(ADMIN_COOKIE_NAME)?.value;
+      if (!verifyAdminSessionToken(sessionToken)) {
+        throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
+      }
+      const currentStore = (await getSystemConfig(true)).store;
+      await updateSystemSection('store', {
+        isPaymentEnabled,
+        paymentDisabledReason: paymentDisabledReason ?? currentStore.paymentDisabledReason,
+      });
+      return { success: true, isPaymentEnabled };
     },
   }),
 

@@ -14,6 +14,9 @@ import {
   Mail,
   Send,
   Server,
+  Copy,
+  ExternalLink,
+  CreditCard,
 } from 'lucide-react';
 import { actions } from 'astro:actions';
 
@@ -40,6 +43,11 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
     config?.store?.announcement || 'Pengiriman otomatis 24/7 aktif via QRIS.'
   );
   const [isStoreOpen, setIsStoreOpen] = useState(config?.store?.isStoreOpen !== false);
+  const [isPaymentEnabled, setIsPaymentEnabled] = useState(config?.store?.isPaymentEnabled !== false);
+  const [paymentDisabledReason, setPaymentDisabledReason] = useState(
+    config?.store?.paymentDisabledReason || 'Sistem pembayaran sedang dinonaktifkan sementara untuk pemeliharaan/migrasi gateway.'
+  );
+  const [isTogglingPayment, setIsTogglingPayment] = useState(false);
   const [qrisNmid, setQrisNmid] = useState(config?.store?.qrisNmid || 'ID1020021303845');
   const [expiryMinutes, setExpiryMinutes] = useState(config?.orders?.expiryMinutes || 15);
   const [maxQuantity, setMaxQuantity] = useState(config?.orders?.maxQuantityPerOrder || 5);
@@ -56,6 +64,33 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const handleQuickTogglePayment = async () => {
+    setIsTogglingPayment(true);
+    const targetState = !isPaymentEnabled;
+    try {
+      const { data, error } = await actions.adminTogglePaymentStatus({
+        isPaymentEnabled: targetState,
+        paymentDisabledReason: paymentDisabledReason.trim(),
+      });
+      if (error || !data) {
+        showToast('error', error?.message || 'Gagal mengubah status pembayaran.');
+        return;
+      }
+      setIsPaymentEnabled(targetState);
+      showToast(
+        'success',
+        targetState
+          ? 'Sistem pembayaran Doit.id berhasil DIAKTIFKAN!'
+          : 'Sistem pembayaran berhasil DINONAKTIFKAN (mode pemeliharaan aktif)!'
+      );
+      onConfigSaved();
+    } catch (err) {
+      showToast('error', (err as Error).message);
+    } finally {
+      setIsTogglingPayment(false);
+    }
+  };
+
   const handleSaveStoreSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingStore(true);
@@ -66,6 +101,8 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
         supportWhatsapp: supportWhatsapp.trim(),
         announcement: announcement.trim(),
         isStoreOpen,
+        isPaymentEnabled,
+        paymentDisabledReason: paymentDisabledReason.trim(),
         qrisNmid: qrisNmid.trim(),
         expiryMinutes: Number(expiryMinutes),
         maxQuantityPerOrder: Number(maxQuantity),
@@ -206,6 +243,19 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
               />
             </div>
 
+            <div className="space-y-1">
+              <label className="font-semibold text-zinc-700 dark:text-zinc-300">
+                Pesan Pemeliharaan Pembayaran (Tampil saat pembayaran dinonaktifkan):
+              </label>
+              <input
+                type="text"
+                value={paymentDisabledReason}
+                onChange={(e) => setPaymentDisabledReason(e.target.value)}
+                placeholder="Contoh: Sistem pembayaran sedang dinonaktifkan sementara untuk migrasi gateway."
+                className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white focus:outline-none"
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
               <div className="space-y-1">
                 <label className="font-semibold text-zinc-700 dark:text-zinc-300">
@@ -265,6 +315,107 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Doit.id Payment Gateway Integration Card */}
+        <div className="lg:col-span-2 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#141416] space-y-4 shadow-xs">
+          <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-blue-500" />
+                <span>Gateway Pembayaran Doit.id (QRIS & Webhook)</span>
+              </h3>
+              <p className="text-xs text-zinc-500">
+                Status operasional pembayaran QRIS, kontrol pemeliharaan darurat, & konfigurasi webhook
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={isTogglingPayment}
+                onClick={handleQuickTogglePayment}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  isPaymentEnabled
+                    ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+                    : 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+                }`}
+                title="Klik untuk mengubah status aktif/nonaktif sistem pembayaran secara instan"
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>
+                  {isTogglingPayment
+                    ? 'Menyimpan...'
+                    : isPaymentEnabled
+                    ? 'Pembayaran Aktif'
+                    : 'Pembayaran Nonaktif'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {!isPaymentEnabled && (
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-xs space-y-2">
+              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>Mode Pemeliharaan Aktif: Pembuatan Invoice & QRIS Dinonaktifkan</span>
+              </div>
+              <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                Pembeli tetap dapat melihat etalase produk dan mengecek status pesanan lama, namun tidak dapat membuat transaksi baru. Pesan yang tampil ke pembeli:
+              </p>
+              <div className="p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-amber-200 dark:border-amber-800/80 font-mono text-[11px] text-zinc-800 dark:text-zinc-200">
+                "{paymentDisabledReason}"
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 space-y-1">
+              <span className="text-[11px] font-medium text-zinc-500">Endpoint Webhook Resmi Toko:</span>
+              <div className="flex items-center justify-between gap-2 pt-0.5">
+                <code className="font-mono text-xs text-zinc-900 dark:text-zinc-100 truncate">
+                  https://pixelstore.oktaa.my.id/api/webhooks/doit
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText('https://pixelstore.oktaa.my.id/api/webhooks/doit');
+                    showToast('success', 'URL Webhook berhasil disalin!');
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition cursor-pointer shrink-0"
+                  title="Salin URL Webhook"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="text-[10px] text-zinc-400">
+                Pasang URL ini di menu Developer &gt; Webhook portal Doit.id.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 space-y-1">
+              <span className="text-[11px] font-medium text-zinc-500">Header Verifikasi Signature:</span>
+              <div className="pt-0.5">
+                <code className="font-mono text-xs text-zinc-900 dark:text-zinc-100">
+                  PayBridge-Signature: t=...,v1=...
+                </code>
+              </div>
+              <p className="text-[10px] text-zinc-400">
+                Terverifikasi otomatis dengan HMAC-SHA256 (timing-safe).
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40 text-xs text-blue-900 dark:text-blue-300 flex items-start gap-2.5">
+            <ShieldCheck className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+            <div className="space-y-1 text-[11px] leading-relaxed">
+              <p className="font-semibold text-blue-900 dark:text-blue-200">
+                Petunjuk Transisi & Simulasi Sandbox Doit.id:
+              </p>
+              <p className="text-blue-800 dark:text-blue-300">
+                Untuk menguji pembayaran di mode sandbox, buka portal Doit.id &gt; menu Transaksi &gt; klik rincian pesanan &gt; klik <strong>Simulasikan lunas</strong>. Webhook <code className="font-mono">payment.paid</code> akan langsung membuka lisensi digital buyer secara otomatis.
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Right Column: Security & SMTP System */}

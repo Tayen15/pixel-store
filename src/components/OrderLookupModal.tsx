@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { actions } from 'astro:actions';
-import { X, Search, CheckCircle2, AlertCircle, Copy, Loader2, PackageCheck, ExternalLink } from 'lucide-react';
+import { X, Search, CheckCircle2, AlertCircle, Copy, Loader2, PackageCheck, ExternalLink, XCircle, CreditCard, Clock } from 'lucide-react';
 
 interface OrderLookupModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface OrderLookupModalProps {
 export const OrderLookupModal: React.FC<OrderLookupModalProps> = ({ isOpen, onClose }) => {
   const [orderNumber, setOrderNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [orderResult, setOrderResult] = useState<{
     orderNumber: string;
@@ -19,6 +20,7 @@ export const OrderLookupModal: React.FC<OrderLookupModalProps> = ({ isOpen, onCl
     status: string;
     licenseCodes: string[];
     createdAt: string | null;
+    paymentDetails?: any;
   } | null>(null);
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -47,6 +49,62 @@ export const OrderLookupModal: React.FC<OrderLookupModalProps> = ({ isOpen, onCl
       setErrorMessage((err as Error).message || 'Terjadi kesalahan sistem');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!orderResult) return;
+    if (!window.confirm(`Apakah Anda yakin ingin membatalkan pesanan ${orderResult.orderNumber}?`)) return;
+
+    setIsCancelling(true);
+    try {
+      const { data, error } = await actions.cancelOrder({
+        orderNumber: orderResult.orderNumber,
+        reason: 'Dibatalkan oleh pembeli via pencarian pesanan',
+      });
+      if (error) {
+        alert(error.message || 'Gagal membatalkan pesanan.');
+        return;
+      }
+      try {
+        const savedRaw = localStorage.getItem('pixel_pending_order');
+        if (savedRaw) {
+          const saved = JSON.parse(savedRaw);
+          if (saved.orderNumber === orderResult.orderNumber) {
+            localStorage.removeItem('pixel_pending_order');
+          }
+        }
+      } catch {}
+
+      setOrderResult((prev) => (prev ? { ...prev, status: 'CANCELED' } : null));
+      alert(`Pesanan ${orderResult.orderNumber} berhasil dibatalkan.`);
+    } catch (err) {
+      alert((err as Error).message || 'Terjadi kesalahan sistem.');
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  const handleResumePayment = () => {
+    if (!orderResult) return;
+    if (orderResult.paymentDetails) {
+      const p = orderResult.paymentDetails;
+      try {
+        localStorage.setItem(
+          'pixel_pending_order',
+          JSON.stringify({
+            orderNumber: orderResult.orderNumber,
+            productName: orderResult.productName,
+            quantity: orderResult.quantity,
+            amountIdr: p.amountIdr,
+            qrCodeString: p.qrCodeString,
+            paymentUrl: p.paymentUrl,
+            expiresAt: p.expiresAt,
+            gatewayProvider: p.gatewayProvider,
+          })
+        );
+      } catch {}
+      window.location.href = '/';
     }
   };
 
@@ -137,6 +195,42 @@ export const OrderLookupModal: React.FC<OrderLookupModalProps> = ({ isOpen, onCl
                   </span>
                 </div>
               </div>
+
+              {orderResult.status === 'PENDING_PAYMENT' && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300">
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span className="text-[11px] font-medium leading-tight">
+                      Menunggu pembayaran QRIS. Batalkan pesanan jika ingin membuat transaksi baru.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCancelOrder}
+                      disabled={isCancelling}
+                      className="flex-1 py-1.5 px-3 rounded-xl border border-red-200 dark:border-red-900/60 bg-white dark:bg-zinc-900 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {isCancelling ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5" />
+                      )}
+                      <span>Batalkan Pesanan</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleResumePayment}
+                      className="flex-1 py-1.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Bayar Sekarang</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* License Codes if completed */}
               {orderResult.licenseCodes && orderResult.licenseCodes.length > 0 && (

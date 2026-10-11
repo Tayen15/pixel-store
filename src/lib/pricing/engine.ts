@@ -54,11 +54,11 @@ export interface RetailPriceResult {
 
 /**
  * Calculates final retail price in IDR from base USDT wholesale cost.
- * Refactored Business Formula (Tako.id Withdrawal-Aware):
+ * Refactored Business Formula (Doit.id Gateway-Aware):
  * - Wholesale Cost (IDR) = basePriceUsdt * exchangeRate
  * - Profit Margin (IDR)  = Wholesale Cost * (marginPercent / 100)
- * - Tako Gateway Fee (IDR) = (Wholesale Cost + Profit Margin) * (gatewayFeePercent / 100)
- * - Operational Fee (IDR) = Tako Gateway Fee + optional fixedFeeIdr
+ * - Doit Gateway Fee (IDR) = (Wholesale Cost + Profit Margin) * (gatewayFeePercent / 100)
+ * - Operational Fee (IDR) = Doit Gateway Fee + optional fixedFeeIdr
  * - Final Unit Price (IDR) = Ceil(Subtotal / roundingStep) * roundingStep
  */
 export function calculateRetailPriceIdr(
@@ -68,7 +68,7 @@ export function calculateRetailPriceIdr(
 ): RetailPriceResult {
   const rate = config?.usdtIdrRate ?? Number(process.env.USDT_IDR_RATE || 17800);
   const margin = config?.marginPercent ?? Number(process.env.PROFIT_MARGIN_PERCENT || 20);
-  const gatewayFeePercent = config?.gatewayFeePercent ?? Number(process.env.GATEWAY_FEE_PERCENT || 5.0);
+  const gatewayFeePercent = config?.gatewayFeePercent ?? Number(process.env.GATEWAY_FEE_PERCENT || 0.7);
   const fixedOperationalFee = config?.fixedFeeIdr ?? Number(process.env.FIXED_PAYMENT_FEE_IDR || 0);
   const rounding = config?.roundingStep ?? 1000;
 
@@ -78,10 +78,10 @@ export function calculateRetailPriceIdr(
   // 2. Margin Keuntungan Bersih Toko (IDR)
   const profitAmountIdr = Math.round(wholesaleCostIdr * (margin / 100));
 
-  // 3. Subtotal sebelum potongan penarikan Tako
+  // 3. Subtotal sebelum potongan gateway Doit.id
   const subtotalBeforeGateway = wholesaleCostIdr + profitAmountIdr + fixedOperationalFee;
 
-  // 4. Alokasi Biaya Penarikan Saldo Tako (meng-cover potongan 4.5% - 5% saat withdrawal)
+  // 4. Alokasi Biaya Gateway / Penarikan Doit.id
   const gatewayFeeIdr = Math.round(subtotalBeforeGateway * (gatewayFeePercent / 100));
   const operationalFeeIdr = gatewayFeeIdr + fixedOperationalFee;
 

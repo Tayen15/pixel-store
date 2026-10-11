@@ -28,7 +28,7 @@ flowchart TD
     end
 
     subgraph ExternalThirdParties ["External Services"]
-        PG["Local Payment Gateway (QRIS)"]
+        PG["Doit.id Payment Gateway (QRIS & Hosted Pay)"]
         Upstream["InsightXPro API (USDT)"]
     end
 
@@ -38,7 +38,7 @@ flowchart TD
     AstroActions --> PG
     AstroActions --> SQLite
 
-    PG -->|Webhook Callback| WebhookEndpoint
+    PG -->|Webhook Callback (PayBridge-Signature)| WebhookEndpoint
     WebhookEndpoint -->|Verify & Lock Order| SQLite
     WebhookEndpoint -->|POST /api/v1/orders| InsightClient
     InsightClient --> Upstream
@@ -57,7 +57,7 @@ sequenceDiagram
     participant Astro as Astro Web Store
     participant Action as Astro Server Actions
     participant DB as Embedded SQLite (Drizzle)
-    participant PG as Payment Gateway (QRIS)
+    participant PG as Doit.id Payment Gateway (QRIS)
     participant Supplier as InsightXPro API (USDT)
 
     Customer->>Astro: Browse Catalog (Zero client JS, fast SSR)
@@ -72,7 +72,7 @@ sequenceDiagram
     
     Astro->>Customer: Display Dynamic QRIS Modal & 15-Min Countdown
     Customer->>PG: Pays via GoPay / BCA / Dana / OVO
-    PG->>Astro: POST /api/webhooks/payment (Payload with Signature)
+    PG->>Astro: POST /api/webhooks/doit (PayBridge-Signature: t=..., v1=...)
     Astro->>Astro: Verify Signature & Lock Order (Atomic DB Transaction)
     
     critical Upstream Automated Fulfillment
@@ -98,7 +98,7 @@ sequenceDiagram
 | **Authentication & Accounts** | **Customer Account & Admin Sessions** | Secure scrypt-hashed credentials, 30-day customer sessions, and HMAC-SHA256 admin tokens with full order history. |
 | **State / Caching** | **In-Memory Store (Native Map)** | In-memory TTL cache for catalog and in-memory token bucket for supplier rate limits (zero Redis required). |
 | **Server Actions** | **Astro Actions (`astro:actions`)** | Type-safe RPC with built-in Zod validation, replacing REST boilerplate for user interactions. |
-| **API Endpoints** | **Astro Endpoints (`src/pages/api/`)** | Lightweight endpoint dedicated to receiving payment gateway webhooks. |
+| **API Endpoints** | **Astro Endpoints (`src/pages/api/webhooks/doit.ts`)** | Lightweight endpoint dedicated to receiving Doit.id payment gateway webhooks. |
 
 ---
 

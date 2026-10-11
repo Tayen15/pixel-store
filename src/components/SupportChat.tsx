@@ -73,8 +73,19 @@ export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) 
     scrollToBottom();
   }, [messages]);
 
+  const [orderQuery, setOrderQuery] = useState<string>('');
+
   // Check customer session on client mount if not passed from server
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const orderParam = params.get('orderNumber') || params.get('order');
+      if (orderParam) {
+        setOrderQuery(orderParam);
+        setInputText(`Halo Admin Pixel Store, saya butuh bantuan untuk pesanan ${orderParam}. Stok supplier kosong saat verifikasi pembayaran. Mohon bantuan aktivasi manual atau refund.`);
+      }
+    }
+
     if (!initialUser) {
       actions.getCurrentUser().then(({ data }) => {
         if (data?.user) {
@@ -266,6 +277,14 @@ export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) 
   if (!currentUser) {
     return (
       <div className="w-full max-w-md mx-auto bg-white dark:bg-[#141416] rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden p-6 sm:p-8 space-y-6">
+        {orderQuery && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+            <div className="leading-tight">
+              Bantuan untuk Pesanan: <strong className="font-mono">{orderQuery}</strong>
+            </div>
+          </div>
+        )}
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center mx-auto shadow-xs">
             <Lock className="w-6 h-6" />

@@ -17,7 +17,10 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  XCircle,
+  RotateCcw,
+  MessageCircle
 } from 'lucide-react';
 import { ServiceLogo } from './ServiceLogo';
 import { parseCatalogDescription } from './ProductDetailModal';
@@ -34,24 +37,49 @@ export interface ProductData {
   imageUrl?: string;
 }
 
+export interface PendingOrderSession {
+  orderNumber: string;
+  productId?: number;
+  productName?: string;
+  quantity?: number;
+  unitPriceIdr?: number;
+  amountIdr: number;
+  qrCodeString?: string;
+  paymentUrl?: string;
+  qrCodeImageUrl?: string;
+  qrCodeDataUrl?: string;
+  gatewayProvider?: string;
+  expiresAt: string;
+}
+
 interface CheckoutModalProps {
   product: ProductData | null;
   initialQuantity?: number;
+  initialPendingOrder?: PendingOrderSession | null;
   onClose: () => void;
+  isPaymentEnabled?: boolean;
+  paymentDisabledReason?: string;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ 
   product, 
   initialQuantity = 1,
-  onClose 
+  initialPendingOrder = null,
+  onClose,
+  isPaymentEnabled = true,
+  paymentDisabledReason,
 }) => {
-  const [step, setStep] = useState<'form' | 'qris' | 'success' | 'failed_supplier'>('form');
+  const [step, setStep] = useState<'form' | 'qris' | 'success' | 'failed_supplier' | 'canceled' | 'expired'>(
+    initialPendingOrder ? 'qris' : 'form'
+  );
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [unitPrice, setUnitPrice] = useState<number>(product?.retailPriceIdr || 0);
   const [priceNotice, setPriceNotice] = useState<string | null>(null);
   const [isVerifyingPrice, setIsVerifyingPrice] = useState<boolean>(true);
-  const [canPurchase, setCanPurchase] = useState<boolean>(true);
-  const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
+  const [canPurchase, setCanPurchase] = useState<boolean>(isPaymentEnabled);
+  const [unavailableReason, setUnavailableReason] = useState<string | null>(
+    isPaymentEnabled ? null : (paymentDisabledReason || 'Sistem pembayaran sedang dinonaktifkan sementara.')
+  );
 
   // Synchronize initial unit price and trigger realtime pre-flight check from database
   useEffect(() => {
@@ -99,35 +127,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setQuantity(initialQuantity);
     }
   }, [initialQuantity, product?.id]);
+
   const [showOptionalFields, setShowOptionalFields] = useState(false);
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [failureReason, setFailureReason] = useState('');
 
   // Invoice & Order state
-  const [orderData, setOrderData] = useState<{
-    orderNumber: string;
-    amountIdr: number;
-    qrCodeString: string;
-    paymentUrl?: string;
-    qrCodeImageUrl?: string;
-    qrCodeDataUrl?: string;
-    gatewayProvider?: string;
-    expiresAt: string;
-  } | null>(null);
+  const [orderData, setOrderData] = useState<PendingOrderSession | null>(initialPendingOrder || null);
 
   // QR Code Rendering & action states
-  const [renderedQrUrl, setRenderedQrUrl] = useState<string>('');
-  const [isQrLoading, setIsQrLoading] = useState<boolean>(true);
+  const [renderedQrUrl, setRenderedQrUrl] = useState<string>(initialPendingOrder?.qrCodeDataUrl || '');
+  const [isQrLoading, setIsQrLoading] = useState<boolean>(!initialPendingOrder?.qrCodeDataUrl);
   const [copiedAmount, setCopiedAmount] = useState<boolean>(false);
   const [copiedOrderNumber, setCopiedOrderNumber] = useState<boolean>(false);
 
   // Success keys state
   const [licenseCodes, setLicenseCodes] = useState<string[]>([]);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [timeRemaining, setTimeRemaining] = useState(15 * 60);
+
+  // Calculate remaining seconds dynamically
+  const calculateRemainingSeconds = (expiresAtStr?: string) => {
+    if (!expiresAtStr) return 15 * 60;
+    const expiry = new Date(expiresAtStr).getTime();
+    if (isNaN(expiry)) return 15 * 60;
+    return Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+  };
+
+  const [timeRemaining, setTimeRemaining] = useState<number>(() => {
+    return initialPendingOrder ? calculateRemainingSeconds(initialPendingOrder.expiresAt) : 15 * 60;
+  });
 
   // Countdown timer for QRIS
   useEffect(() => {
@@ -137,6 +169,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
+          try {
+            localStorage.removeItem('pixel_pending_order');
+          } catch {}
+          setStep('expired');
           return 0;
         }
         return prev - 1;
@@ -146,7 +182,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return () => clearInterval(timer);
   }, [step]);
 
-  // Polling for order completion when on QRIS step
+  // Polling for order completion, cancellation, and expiration when on QRIS step
   useEffect(() => {
     if (step !== 'qris' || !orderData) return;
 
@@ -158,10 +194,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         if (!error && data) {
           if (data.status === 'COMPLETED' && data.licenseCodes.length > 0) {
+            try {
+              localStorage.removeItem('pixel_pending_order');
+            } catch {}
             setLicenseCodes(data.licenseCodes);
             setStep('success');
             clearInterval(pollInterval);
+          } else if (data.status === 'CANCELED') {
+            try {
+              localStorage.removeItem('pixel_pending_order');
+            } catch {}
+            setStep('canceled');
+            clearInterval(pollInterval);
+          } else if (data.status === 'EXPIRED') {
+            try {
+              localStorage.removeItem('pixel_pending_order');
+            } catch {}
+            setStep('expired');
+            clearInterval(pollInterval);
           } else if (data.status === 'FAILED_SUPPLIER') {
+            try {
+              localStorage.removeItem('pixel_pending_order');
+            } catch {}
             setFailureReason(data.failureReason || 'Stok supplier wholesale kosong saat verifikasi pembayaran.');
             setStep('failed_supplier');
             clearInterval(pollInterval);
@@ -202,11 +256,57 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       setOrderData(data);
+      if (data.expiresAt) {
+        setTimeRemaining(calculateRemainingSeconds(data.expiresAt));
+      }
+
+      // Persist in localStorage so page refresh reopens this exact pending payment
+      try {
+        localStorage.setItem(
+          'pixel_pending_order',
+          JSON.stringify({
+            ...data,
+            productId: product.id,
+            product,
+            quantity,
+          })
+        );
+      } catch {}
+
       setStep('qris');
     } catch (err) {
       setErrorMessage((err as Error).message || 'Terjadi kesalahan sistem');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Handle Buyer Cancelling the Order
+  const handleCancelPayment = async () => {
+    if (!orderData) return;
+    if (!window.confirm('Apakah Anda yakin ingin membatalkan pesanan ini?')) return;
+
+    setIsCancelling(true);
+    try {
+      const { data, error } = await actions.cancelOrder({
+        orderNumber: orderData.orderNumber,
+        reason: 'Dibatalkan oleh pembeli di layar pembayaran',
+      });
+
+      if (error) {
+        alert(error.message || 'Gagal membatalkan pesanan.');
+        return;
+      }
+
+      try {
+        localStorage.removeItem('pixel_pending_order');
+      } catch {}
+
+      setStep('canceled');
+    } catch (err) {
+      alert((err as Error).message || 'Terjadi kesalahan sistem');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -344,6 +444,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   ? 'Pembayaran QRIS' 
                   : step === 'failed_supplier'
                   ? 'Garansi Stok Kosong'
+                  : step === 'canceled'
+                  ? 'Pesanan Dibatalkan'
+                  : step === 'expired'
+                  ? 'Waktu Pembayaran Habis'
                   : 'Link Registrasi Siap'}
               </span>
               <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 leading-snug">
@@ -541,7 +645,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </form>
           )}
 
-          {/* STEP 2: QRIS PAYMENT */}
+          {/* STEP 2: QRIS PAYMENT (Pure QR Code Image Display) */}
           {step === 'qris' && orderData && (
             <div className="text-center space-y-4">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-400 text-xs font-medium">
@@ -549,44 +653,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <span>Batas Waktu: {formatTimer(timeRemaining)}</span>
               </div>
 
-              {/* Primary Action Button for Web-based Payment Gateway (Tako) */}
-              {orderData.paymentUrl && (
-                <div className="max-w-[320px] mx-auto space-y-2">
-                  <a
-                    href={orderData.paymentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 cursor-pointer animate-pulse hover:animate-none"
-                    title="Buka Halaman Pembayaran Resmi"
-                  >
-                    <span>Buka Pembayaran QRIS Resmi</span>
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-
-                  {!isNationalQris && (
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
-                      Klik tombol di atas untuk membuka QRIS asli Tako yang dapat di-scan langsung oleh BCA, Mandiri, GoPay, Dana, & OVO.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* QR Code Container */}
+              {/* Pure QR Code Card */}
               <div className="p-4 sm:p-5 bg-white border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-md inline-block text-zinc-900 max-w-[320px] w-full text-left">
-                {/* Card Header */}
-                <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-zinc-200">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="font-black text-red-600 text-xl tracking-tighter leading-none">QRIS</span>
-                    <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
-                      {isNationalQris ? 'Pembayaran Digital' : 'Tautan Resmi Tako'}
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-bold text-zinc-800 uppercase tracking-tight">
-                    PIXEL STORE
-                  </div>
-                </div>
 
-                {/* Scannable QR Code */}
+                {/* Scannable QR Code Bitmap */}
                 <div className="w-60 h-60 mx-auto bg-white rounded-xl flex flex-col items-center justify-center p-1 relative overflow-hidden border border-zinc-100">
                   {isQrLoading || !renderedQrUrl ? (
                     <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 py-10">
@@ -602,12 +672,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     />
                   )}
                 </div>
-
-                {/* Card Footer */}
-                <div className="mt-3 pt-2.5 border-t border-zinc-200 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
-                  <span>{isNationalQris ? 'NMID: ID1020021123456' : 'Scan dengan Kamera HP'}</span>
-                  <span className="font-semibold text-zinc-700">{isNationalQris ? 'ASPI / BI' : 'TAKO GATEWAY'}</span>
-                </div>
               </div>
 
               {/* Quick Action: Download QR */}
@@ -616,7 +680,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   type="button"
                   onClick={handleDownloadQr}
                   disabled={!renderedQrUrl || isQrLoading}
-                  className="flex-1 py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                   title="Unduh QR"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -655,18 +719,125 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     {copiedOrderNumber ? (
                       <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                     ) : (
-                      <Copy className="w-3 h-3" />
+                      <Copy className="w-3.5 h-3.5" />
                     )}
                   </button>
                 </div>
               </div>
 
-              {/* Status Indicator */}
+              {/* Live Polling Status Indicator */}
               <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 pt-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
                 <span>Menunggu pembayaran...</span>
               </div>
 
+              {/* Cancel Payment Action Button */}
+              <div className="max-w-[320px] mx-auto pt-2">
+                <button
+                  type="button"
+                  disabled={isCancelling}
+                  onClick={handleCancelPayment}
+                  className="w-full py-2 px-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-red-300 dark:hover:border-red-900 bg-transparent hover:bg-red-50/50 dark:hover:bg-red-950/30 text-zinc-500 hover:text-red-600 dark:text-zinc-400 dark:hover:text-red-400 text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isCancelling ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Membatalkan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Batalkan Pembayaran</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP: CANCELED (Dibatalkan) */}
+          {step === 'canceled' && (
+            <div className="text-center space-y-5 animate-in zoom-in-95 duration-200 py-3">
+              <div className="w-14 h-14 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto">
+                <XCircle className="w-8 h-8" />
+              </div>
+
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
+                  Status Transaksi
+                </span>
+                <h4 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
+                  Pembayaran Dibatalkan
+                </h4>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 max-w-xs mx-auto leading-relaxed">
+                  Pesanan <span className="font-mono font-semibold text-zinc-800 dark:text-zinc-200">{orderData?.orderNumber}</span> telah dibatalkan. Tagihan QRIS tidak lagi berlaku.
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('form');
+                    setOrderData(null);
+                  }}
+                  className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-bold rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Buat Pesanan Baru</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP: EXPIRED (Kadaluarsa) */}
+          {step === 'expired' && (
+            <div className="text-center space-y-5 animate-in zoom-in-95 duration-200 py-3">
+              <div className="w-14 h-14 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto">
+                <Clock className="w-8 h-8" />
+              </div>
+
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                  Waktu Habis
+                </span>
+                <h4 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
+                  Pembayaran Kadaluarsa
+                </h4>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 max-w-xs mx-auto leading-relaxed">
+                  Batas waktu 15 menit pembayaran QRIS untuk pesanan <span className="font-mono font-semibold text-zinc-800 dark:text-zinc-200">{orderData?.orderNumber}</span> telah berakhir. Silakan ulangi pemesanan untuk membuat kode QR baru.
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('form');
+                    setOrderData(null);
+                  }}
+                  className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-bold rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Pesan Ulang Produk</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           )}
 
@@ -793,20 +964,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </strong>
                 </div>
                 <p className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-                  Jangan khawatir! Admin CS kami telah menerima notifikasi ini dan siap mengaktifkan lisensi secara manual atau mengembalikan dana (refund) 100% tanpa potongan.
+                  Jangan khawatir! Tim Live Chat Support kami siap membantu Anda mengaktifkan lisensi secara manual atau memproses pengembalian dana (refund) 100% langsung di web tanpa potongan.
                 </p>
               </div>
 
               <div className="space-y-2 pt-1">
                 <a
-                  href={`https://wa.me/628123456789?text=${encodeURIComponent(
-                    `Halo Admin Pixel Store, saya sudah bayar QRIS untuk pesanan ${orderData?.orderNumber} (Rp ${orderData?.amountIdr?.toLocaleString('id-ID')}), status sistem: stok supplier habis. Mohon bantuan aktivasi manual atau refund.`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-xs"
+                  href={`/support?orderNumber=${encodeURIComponent(orderData?.orderNumber || '')}`}
+                  className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                 >
-                  <span>Hubungi CS WhatsApp untuk Bantuan / Refund ↗</span>
+                  <MessageCircle className="w-4 h-4 shrink-0" />
+                  <span>Buka Live Chat Support Web untuk Bantuan / Refund</span>
+                  <ArrowRight className="w-3.5 h-3.5 shrink-0" />
                 </a>
 
                 <button

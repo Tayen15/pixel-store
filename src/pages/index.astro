@@ -60,5 +60,7 @@ const products: ProductItem[] = cached
     initialProducts={products} 
     currentFxRate={dynamicPricing.usdtIdrRate}
     fxSource={dynamicPricing.fxSource || 'Indodax'}
+    isPaymentEnabled={config.store.isPaymentEnabled !== false}
+    paymentDisabledReason={config.store.paymentDisabledReason || ''}
   />
 </Layout>

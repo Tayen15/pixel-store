@@ -253,7 +253,7 @@ export const server = {
 
 ---
 
-## 4. Webhook Route Handler (`src/pages/api/webhooks/payment.ts`)
+## 4. Webhook Route Handler (`src/pages/api/webhooks/doit.ts`)
 
 ```typescript
 import type { APIRoute } from 'astro';
@@ -261,13 +261,13 @@ import type { APIRoute } from 'astro';
 export const POST: APIRoute = async ({ request }) => {
   try {
     const rawPayload = await request.text();
-    const signature = request.headers.get('x-callback-signature') || '';
+    const signature = request.headers.get('PayBridge-Signature') || '';
 
-    // 1. Verify Payment Gateway HMAC signature
-    // 2. Parse payload & fetch order from SQLite
-    // 3. Atomic transition: PENDING_PAYMENT -> FULFILLING
+    // 1. Verify Doit.id HMAC signature (v1 = HMAC-SHA256(secret, t + "." + rawPayload))
+    // 2. Parse payload & fetch order by reference (orderNumber)
+    // 3. Atomic lock: PENDING_PAYMENT -> FULFILLING via PostgreSQL Compare-and-Swap
     // 4. Call InsightXPro placeOrder with stored idempotency_key
-    // 5. Save delivered keys and mark COMPLETED
+    // 5. Save delivered keys, mark COMPLETED, and send automated email receipt
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

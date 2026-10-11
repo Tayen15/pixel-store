@@ -36,13 +36,32 @@ export interface PlaceOrderPayload {
 }
 
 export interface PlaceOrderResponse {
-  order_id: number | string;
-  status: 'completed' | 'processing' | 'failed';
-  product_id: number;
-  quantity: number;
-  total_usdt: number;
+  order?: {
+    id?: number | string;
+    order_id?: number | string;
+    status?: string;
+    product_id?: number;
+    quantity?: number;
+    total_usdt?: number;
+    amount_usdt?: number;
+    price?: number;
+    codes?: string[];
+    delivered_codes?: string[];
+    coupons?: string[];
+    created_at?: string;
+    completed_at?: string;
+    error?: string | null;
+  };
+  order_id?: number | string;
+  id?: number | string;
+  status?: string;
+  product_id?: number;
+  quantity?: number;
+  total_usdt?: number;
   codes?: string[]; // The delivered license keys or vouchers
-  created_at: string;
+  delivered_codes?: string[];
+  coupons?: string[];
+  created_at?: string;
 }
 
 /**
@@ -246,7 +265,28 @@ export class InsightXProClient {
       throw new Error(`Order placement failed (${res.status}): ${errText}`);
     }
 
-    return res.json();
+    const raw = await res.json();
+    const orderData = raw?.order || raw;
+    const extractedCodes = 
+      orderData?.codes || 
+      orderData?.delivered_codes || 
+      orderData?.coupons || 
+      raw?.codes || 
+      [];
+
+    return {
+      ...raw,
+      order: orderData,
+      order_id: orderData?.order_id ?? orderData?.id ?? raw?.order_id,
+      id: orderData?.id ?? raw?.id,
+      status: orderData?.status ?? raw?.status ?? 'completed',
+      product_id: orderData?.product_id ?? raw?.product_id ?? payload.product_id,
+      quantity: orderData?.quantity ?? raw?.quantity ?? payload.quantity,
+      total_usdt: Number(orderData?.total_usdt ?? orderData?.amount_usdt ?? raw?.total_usdt ?? 0),
+      codes: Array.isArray(extractedCodes) ? extractedCodes : [extractedCodes],
+      delivered_codes: Array.isArray(extractedCodes) ? extractedCodes : [extractedCodes],
+      created_at: orderData?.created_at ?? raw?.created_at ?? new Date().toISOString(),
+    };
   }
 
   /**
@@ -257,7 +297,16 @@ export class InsightXProClient {
       headers: this.getHeaders(),
     });
     if (!res.ok) throw new Error('Failed to fetch orders');
-    return res.json();
+    const raw = await res.json();
+    const list = Array.isArray(raw) ? raw : (raw?.orders || []);
+    return list.map((item: any) => {
+      const extractedCodes = item?.codes || item?.delivered_codes || item?.coupons || [];
+      return {
+        ...item,
+        order_id: item?.order_id ?? item?.id,
+        codes: Array.isArray(extractedCodes) ? extractedCodes : [extractedCodes],
+      };
+    });
   }
 
   /**
@@ -268,7 +317,28 @@ export class InsightXProClient {
       headers: this.getHeaders(),
     });
     if (!res.ok) throw new Error(`Order ${orderId} not found`);
-    return res.json();
+    const raw = await res.json();
+    const orderData = raw?.order || raw;
+    const extractedCodes = 
+      orderData?.codes || 
+      orderData?.delivered_codes || 
+      orderData?.coupons || 
+      raw?.codes || 
+      [];
+
+    return {
+      ...raw,
+      order: orderData,
+      order_id: orderData?.order_id ?? orderData?.id ?? raw?.order_id,
+      id: orderData?.id ?? raw?.id,
+      status: orderData?.status ?? raw?.status ?? 'completed',
+      product_id: orderData?.product_id ?? raw?.product_id,
+      quantity: orderData?.quantity ?? raw?.quantity,
+      total_usdt: Number(orderData?.total_usdt ?? orderData?.amount_usdt ?? raw?.total_usdt ?? 0),
+      codes: Array.isArray(extractedCodes) ? extractedCodes : [extractedCodes],
+      delivered_codes: Array.isArray(extractedCodes) ? extractedCodes : [extractedCodes],
+      created_at: orderData?.created_at ?? raw?.created_at,
+    };
   }
 }
 

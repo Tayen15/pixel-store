@@ -17,7 +17,7 @@ export interface FulfillmentResult {
  */
 export async function executeOrderFulfillment(
   orderId: string,
-  triggerSource: 'webhook_tako' | 'webhook_generic' | 'client_polling' | 'sandbox_simulation',
+  triggerSource: 'webhook_doit' | 'webhook_tako' | 'webhook_generic' | 'client_polling' | 'sandbox_simulation',
   rawPayload?: string
 ): Promise<FulfillmentResult> {
   // 1. Fetch current order
@@ -113,8 +113,21 @@ export async function executeOrderFulfillment(
       order.idempotencyKey
     );
 
-    const supplierOrderId = String(supplierRes.order_id);
-    const codes = supplierRes.codes || [];
+    const supplierOrderId = String(
+      supplierRes.order_id ?? 
+      supplierRes.order?.order_id ?? 
+      supplierRes.order?.id ?? 
+      supplierRes.id ?? 
+      'UNKNOWN'
+    );
+    const rawCodes = 
+      supplierRes.codes?.length ? supplierRes.codes :
+      supplierRes.order?.codes?.length ? supplierRes.order.codes :
+      supplierRes.order?.delivered_codes?.length ? supplierRes.order.delivered_codes :
+      supplierRes.order?.coupons?.length ? supplierRes.order.coupons :
+      supplierRes.delivered_codes?.length ? supplierRes.delivered_codes :
+      [];
+    const codes = Array.isArray(rawCodes) ? rawCodes : [rawCodes];
 
     if (codes.length === 0) {
       throw new Error('Stok supplier wholesale habis atau lisensi belum siap terbit.');

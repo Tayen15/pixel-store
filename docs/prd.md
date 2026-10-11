@@ -53,7 +53,7 @@ While the wholesale supplier operates strictly in **USDT** via a REST API, Pixel
 ### 4.3 Seamless Checkout & Payment Rail
 - **FR-3.1 Guest Checkout**: Only requires essential delivery data: Email address and WhatsApp number.
 - **FR-3.2 Order Expiration**: QRIS invoices expire after a configured window (e.g., 15 minutes) with real-time countdown.
-- **FR-3.3 Payment Gateway Integration**: Webhook receiver for payment updates (e.g., Midtrans / Xendit / Tripay / Pakasir) with cryptographic signature validation.
+- **FR-3.3 Payment Gateway Integration**: Doit.id Payment Gateway integration with dynamic QRIS generation, hosted checkout URL, and HMAC-SHA256 PayBridge-Signature webhook validation.
 
 ### 4.4 Automated Upstream Fulfillment
 - **FR-4.1 Upstream Balance Check**: Pre-flight verification (`GET /api/v1/balance`) to ensure sufficient USDT before processing orders.

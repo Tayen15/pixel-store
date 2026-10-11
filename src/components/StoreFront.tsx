@@ -10,9 +10,10 @@ import {
   User,
   Star,
   MessageCircle,
+  AlertCircle,
 } from "lucide-react";
 import { ServiceLogo } from "./ServiceLogo";
-import { CheckoutModal } from "./CheckoutModal";
+import { CheckoutModal, type PendingOrderSession } from "./CheckoutModal";
 import { OrderLookupModal } from "./OrderLookupModal";
 import {
   ProductDetailModal,
@@ -44,6 +45,8 @@ interface StoreFrontProps {
   initialProducts: ProductItem[];
   currentFxRate?: number;
   fxSource?: string;
+  isPaymentEnabled?: boolean;
+  paymentDisabledReason?: string;
 }
 
 // Helper to strip emoji noise from upstream names
@@ -60,6 +63,8 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
   initialProducts,
   currentFxRate = 17879,
   fxSource = "Indodax",
+  isPaymentEnabled = true,
+  paymentDisabledReason,
 }) => {
   const [products] = useState<ProductItem[]>(initialProducts);
   const [selectedCategory, setSelectedCategory] = useState<string>("Semua");
@@ -68,6 +73,7 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
     null,
   );
   const [selectedQuantity, setSelectedQuantity] = useState<number>(1);
+  const [restoredPendingOrder, setRestoredPendingOrder] = useState<PendingOrderSession | null>(null);
   const [detailProduct, setDetailProduct] = useState<ProductItem | null>(null);
   const [isLookupOpen, setIsLookupOpen] = useState<boolean>(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState<boolean>(false);
@@ -86,6 +92,52 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
       })
       .catch(() => {});
   }, []);
+
+  // Check and restore active pending order upon accidental page refresh
+  useEffect(() => {
+    try {
+      const savedRaw = localStorage.getItem('pixel_pending_order');
+      if (!savedRaw) return;
+      const saved = JSON.parse(savedRaw);
+      if (!saved?.orderNumber || !saved?.expiresAt) {
+        localStorage.removeItem('pixel_pending_order');
+        return;
+      }
+
+      // Check if order has already expired
+      const expiry = new Date(saved.expiresAt).getTime();
+      if (!isNaN(expiry) && Date.now() >= expiry) {
+        localStorage.removeItem('pixel_pending_order');
+        return;
+      }
+
+      // Verify order status on server
+      actions.getOrderStatus({ orderNumber: saved.orderNumber }).then(({ data, error }) => {
+        if (!error && data && data.status === 'PENDING_PAYMENT') {
+          const matchingProduct = products.find((p) => p.id === (saved.productId || data.productId)) || saved.product;
+          if (matchingProduct) {
+            setSelectedProduct(matchingProduct);
+            setSelectedQuantity(saved.quantity || data.quantity || 1);
+            setRestoredPendingOrder({
+              orderNumber: saved.orderNumber,
+              amountIdr: saved.amountIdr,
+              qrCodeString: saved.qrCodeString,
+              paymentUrl: saved.paymentUrl,
+              qrCodeImageUrl: saved.qrCodeImageUrl,
+              qrCodeDataUrl: saved.qrCodeDataUrl,
+              gatewayProvider: saved.gatewayProvider,
+              expiresAt: saved.expiresAt,
+            });
+          }
+        } else {
+          // If already completed, canceled, or expired, clear local storage
+          localStorage.removeItem('pixel_pending_order');
+        }
+      }).catch(() => {});
+    } catch (e) {
+      console.warn('Failed restoring pending payment session:', e);
+    }
+  }, [products]);
 
   // Derive categories with Top Produk filter if any top product exists
   const hasTopProducts = products.some((p) => p.isTopProduct);
@@ -116,6 +168,20 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
 
       {/* Catalog Main View */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        {/* Payment Maintenance Alert Banner */}
+        {isPaymentEnabled === false && (
+          <div className="mb-6 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start sm:items-center gap-3 text-xs shadow-xs animate-in fade-in duration-200">
+            <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5 sm:mt-0" />
+            <div className="flex-1 space-y-0.5">
+              <span className="font-bold">Pemeliharaan Gateway Pembayaran: </span>
+              <span className="leading-relaxed">
+                {paymentDisabledReason ||
+                  "Sistem pembayaran sedang dinonaktifkan sementara untuk pemeliharaan/migrasi gateway. Katalog tetap dapat dilihat."}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Category Filter & Search */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3.5 mb-7">
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
@@ -298,7 +364,13 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
         <CheckoutModal
           product={selectedProduct}
           initialQuantity={selectedQuantity}
-          onClose={() => setSelectedProduct(null)}
+          initialPendingOrder={restoredPendingOrder}
+          onClose={() => {
+            setSelectedProduct(null);
+            setRestoredPendingOrder(null);
+          }}
+          isPaymentEnabled={isPaymentEnabled}
+          paymentDisabledReason={paymentDisabledReason}
         />
       )}
 

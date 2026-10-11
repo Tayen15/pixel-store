@@ -161,6 +161,7 @@ export class TripayPaymentGateway implements IPaymentGateway {
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { DoitPaymentGateway } from './doit';
 import { TakoPaymentGateway } from './tako';
 
 function getEnv(key: string): string {
@@ -188,8 +189,17 @@ function getEnv(key: string): string {
 
 /**
  * Factory to return the active payment gateway based on environment variables.
+ * Prioritizes Doit.id Payment Gateway, with fallback to Tako, Tripay, or Mock.
  */
 export function getPaymentGateway(): IPaymentGateway {
+  const doitApiKey = getEnv('DOIT_API_KEY');
+  const doitBaseUrl = getEnv('DOIT_BASE_URL') || 'https://pay.doit.id';
+  const doitSigningSecret = getEnv('DOIT_SIGNING_SECRET') || getEnv('DOIT_WEBHOOK_SECRET');
+
+  if (doitApiKey) {
+    return new DoitPaymentGateway(doitApiKey, doitBaseUrl, doitSigningSecret);
+  }
+
   const takoApiKey = getEnv('TAKO_API_KEY');
   const takoUsername = getEnv('TAKO_USERNAME');
   const takoWebhookSecret = getEnv('TAKO_WEBHOOK_SECRET');

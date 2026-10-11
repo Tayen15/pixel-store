@@ -22,6 +22,8 @@ import {
   Mail,
   Phone,
   RefreshCw,
+  XCircle,
+  Loader2,
 } from 'lucide-react';
 import { ServiceLogo } from '@/components/ServiceLogo';
 
@@ -78,6 +80,8 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [guestOrderResult, setGuestOrderResult] = useState<UserOrder | null>(null);
   const [guestLookupError, setGuestLookupError] = useState('');
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [cancellingOrderNumber, setCancellingOrderNumber] = useState<string | null>(null);
+  const [resumingOrderNumber, setResumingOrderNumber] = useState<string | null>(null);
 
   // Load user data on client mount if initialUser was not passed
   useEffect(() => {
@@ -211,6 +215,93 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
       setGuestLookupError((err as Error).message || 'Gagal memeriksa pesanan.');
     } finally {
       setIsLookingUp(false);
+    }
+  };
+
+  const handleCancelOrder = async (orderNumber: string) => {
+    if (!window.confirm(`Apakah Anda yakin ingin membatalkan pesanan ${orderNumber}?`)) {
+      return;
+    }
+
+    setCancellingOrderNumber(orderNumber);
+    try {
+      const { data, error } = await actions.cancelOrder({
+        orderNumber,
+        reason: 'Dibatalkan oleh pelanggan via dasbor akun',
+      });
+
+      if (error) {
+        alert(error.message || 'Gagal membatalkan pesanan.');
+        return;
+      }
+
+      setOrders((prev) =>
+        prev.map((o) => (o.orderNumber === orderNumber ? { ...o, status: 'CANCELED' } : o))
+      );
+
+      if (guestOrderResult?.orderNumber === orderNumber) {
+        setGuestOrderResult((prev) => (prev ? { ...prev, status: 'CANCELED' } : null));
+      }
+
+      try {
+        const savedRaw = localStorage.getItem('pixel_pending_order');
+        if (savedRaw) {
+          const saved = JSON.parse(savedRaw);
+          if (saved.orderNumber === orderNumber) {
+            localStorage.removeItem('pixel_pending_order');
+          }
+        }
+      } catch {}
+
+      alert(`Pesanan ${orderNumber} berhasil dibatalkan.`);
+    } catch (err) {
+      alert((err as Error).message || 'Terjadi kesalahan sistem.');
+    } finally {
+      setCancellingOrderNumber(null);
+    }
+  };
+
+  const handleResumePayment = async (order: UserOrder) => {
+    setResumingOrderNumber(order.orderNumber);
+    try {
+      const { data, error } = await actions.getOrderStatus({ orderNumber: order.orderNumber });
+      if (error || !data) {
+        alert(error?.message || 'Gagal memeriksa status pesanan.');
+        return;
+      }
+
+      if (data.status !== 'PENDING_PAYMENT') {
+        alert(`Status pesanan ini saat ini: ${data.status}`);
+        await loadOrders();
+        return;
+      }
+
+      if (data.paymentDetails) {
+        try {
+          localStorage.setItem(
+            'pixel_pending_order',
+            JSON.stringify({
+              orderNumber: data.orderNumber,
+              productId: data.productId,
+              productName: data.productName,
+              quantity: data.quantity,
+              amountIdr: data.paymentDetails.amountIdr,
+              qrCodeString: data.paymentDetails.qrCodeString,
+              paymentUrl: data.paymentDetails.paymentUrl,
+              expiresAt: data.paymentDetails.expiresAt,
+              gatewayProvider: data.paymentDetails.gatewayProvider,
+            })
+          );
+        } catch {}
+
+        window.location.href = '/';
+      } else {
+        alert('Data QRIS untuk pesanan ini tidak dapat ditemukan.');
+      }
+    } catch (err) {
+      alert((err as Error).message || 'Terjadi kesalahan.');
+    } finally {
+      setResumingOrderNumber(null);
     }
   };
 
@@ -478,6 +569,38 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                   <div className="text-sm font-black font-mono text-zinc-900 dark:text-white">
                     Rp {guestOrderResult.totalAmountIdr?.toLocaleString('id-ID')}
                   </div>
+
+                  {guestOrderResult.status === 'PENDING_PAYMENT' && (
+                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleCancelOrder(guestOrderResult.orderNumber)}
+                        disabled={cancellingOrderNumber === guestOrderResult.orderNumber}
+                        className="flex-1 py-1.5 px-3 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/60 dark:bg-red-950/30 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                      >
+                        {cancellingOrderNumber === guestOrderResult.orderNumber ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5" />
+                        )}
+                        <span>Batalkan</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleResumePayment(guestOrderResult)}
+                        disabled={resumingOrderNumber === guestOrderResult.orderNumber}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {resumingOrderNumber === guestOrderResult.orderNumber ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CreditCard className="w-3.5 h-3.5" />
+                        )}
+                        <span>Bayar Sekarang</span>
+                      </button>
+                    </div>
+                  )}
 
                   {guestOrderResult.licenseCodes && guestOrderResult.licenseCodes.length > 0 && (
                     <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700 space-y-1.5">
@@ -758,6 +881,58 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
                           </span>
                         </div>
                       </div>
+
+                      {/* Pending Payment Action Bar */}
+                      {isPending && (
+                        <div className="p-3 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
+                            <Clock className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span className="text-[11px] font-medium leading-tight">
+                              Menunggu pembayaran QRIS. Batalkan pesanan jika ingin mengganti produk atau jumlah.
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleCancelOrder(order.orderNumber)}
+                              disabled={cancellingOrderNumber === order.orderNumber}
+                              className="px-3 py-1.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-white dark:bg-zinc-900 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {cancellingOrderNumber === order.orderNumber ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Membatalkan...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Batalkan Pesanan</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleResumePayment(order)}
+                              disabled={resumingOrderNumber === order.orderNumber}
+                              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                            >
+                              {resumingOrderNumber === order.orderNumber ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Membuka...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CreditCard className="w-3.5 h-3.5" />
+                                  <span>Bayar Sekarang</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* License Codes Box if Completed */}
                       {isCompleted && order.licenseCodes && order.licenseCodes.length > 0 && (
