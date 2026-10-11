@@ -178,6 +178,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   if (!product) return null;
 
   const totalAmount = unitPrice * quantity;
+  const isNationalQris = Boolean(orderData?.qrCodeString?.startsWith('000201'));
   const { features, notes } = parseCatalogDescription(product.description);
 
   // Handle Order Submission -> Request QRIS (Instant, zero-friction)
@@ -204,33 +205,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setStep('qris');
     } catch (err) {
       setErrorMessage((err as Error).message || 'Terjadi kesalahan sistem');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Simulate Instant Sandbox Payment
-  const handleSimulatePayment = async () => {
-    if (!orderData) return;
-    setIsLoading(true);
-
-    try {
-      const { data, error } = await actions.simulatePayment({
-        orderNumber: orderData.orderNumber,
-      });
-
-      if (error || !data) {
-        setErrorMessage(error?.message || 'Simulasi pembayaran gagal');
-        setIsLoading(false);
-        return;
-      }
-
-      if (data.codes) {
-        setLicenseCodes(data.codes);
-        setStep('success');
-      }
-    } catch (err) {
-      setErrorMessage((err as Error).message || 'Gagal simulasi pembayaran');
     } finally {
       setIsLoading(false);
     }
@@ -575,14 +549,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <span>Batas Waktu: {formatTimer(timeRemaining)}</span>
               </div>
 
-              {/* Authentic QRIS National Standard Card */}
+              {/* Primary Action Button for Web-based Payment Gateway (Tako) */}
+              {orderData.paymentUrl && (
+                <div className="max-w-[320px] mx-auto space-y-2">
+                  <a
+                    href={orderData.paymentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 cursor-pointer animate-pulse hover:animate-none"
+                    title="Buka Halaman Pembayaran Resmi"
+                  >
+                    <span>Buka Pembayaran QRIS Resmi</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+
+                  {!isNationalQris && (
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
+                      Klik tombol di atas untuk membuka QRIS asli Tako yang dapat di-scan langsung oleh BCA, Mandiri, GoPay, Dana, & OVO.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* QR Code Container */}
               <div className="p-4 sm:p-5 bg-white border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-md inline-block text-zinc-900 max-w-[320px] w-full text-left">
-                {/* Official QRIS Header */}
+                {/* Card Header */}
                 <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-zinc-200">
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-black text-red-600 text-xl tracking-tighter leading-none">QRIS</span>
                     <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
-                      Pembayaran Digital
+                      {isNationalQris ? 'Pembayaran Digital' : 'Tautan Resmi Tako'}
                     </span>
                   </div>
                   <div className="text-[11px] font-bold text-zinc-800 uppercase tracking-tight">
@@ -590,7 +586,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 </div>
 
-                {/* Scannable Real QR Code */}
+                {/* Scannable QR Code */}
                 <div className="w-60 h-60 mx-auto bg-white rounded-xl flex flex-col items-center justify-center p-1 relative overflow-hidden border border-zinc-100">
                   {isQrLoading || !renderedQrUrl ? (
                     <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 py-10">
@@ -607,15 +603,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   )}
                 </div>
 
-                {/* Official QRIS Footer */}
+                {/* Card Footer */}
                 <div className="mt-3 pt-2.5 border-t border-zinc-200 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
-                  <span>NMID: ID1020021123456</span>
-                  <span className="font-semibold text-zinc-700">ASPI / BI</span>
+                  <span>{isNationalQris ? 'NMID: ID1020021123456' : 'Scan dengan Kamera HP'}</span>
+                  <span className="font-semibold text-zinc-700">{isNationalQris ? 'ASPI / BI' : 'TAKO GATEWAY'}</span>
                 </div>
               </div>
 
-              {/* Quick Actions: Download QR & Direct Payment Link */}
-              <div className="flex items-center justify-center gap-2 pt-1 max-w-[320px] mx-auto">
+              {/* Quick Action: Download QR */}
+              <div className="flex items-center justify-center gap-2 pt-0.5 max-w-[320px] mx-auto">
                 <button
                   type="button"
                   onClick={handleDownloadQr}
@@ -624,21 +620,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   title="Unduh QR"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Unduh QR</span>
+                  <span>Unduh Gambar QR</span>
                 </button>
-
-                {orderData.paymentUrl && (
-                  <a
-                    href={orderData.paymentUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-xs"
-                    title="Buka halaman pembayaran"
-                  >
-                    <span>Buka Pembayaran</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
               </div>
 
               {/* Amount and Order ID */}
@@ -684,18 +667,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <span>Menunggu pembayaran...</span>
               </div>
 
-              {/* Sandbox Quick Tester */}
-              <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
-                <button
-                  type="button"
-                  onClick={handleSimulatePayment}
-                  disabled={isLoading}
-                  className="w-full py-2 px-3 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Simulasi Pembayaran Berhasil</span>
-                </button>
-              </div>
             </div>
           )}
 

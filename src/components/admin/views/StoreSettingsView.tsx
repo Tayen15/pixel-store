@@ -11,6 +11,9 @@ import {
   CheckCircle2,
   QrCode,
   Power,
+  Mail,
+  Send,
+  Server,
 } from 'lucide-react';
 import { actions } from 'astro:actions';
 
@@ -47,6 +50,11 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [isUpdatingPin, setIsUpdatingPin] = useState(false);
+
+  // SMTP Testing state
+  const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleSaveStoreSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,8 +267,10 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
           </form>
         </div>
 
-        {/* Right: Security & Admin PIN Update */}
-        <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#141416] space-y-6 shadow-xs">
+        {/* Right Column: Security & SMTP System */}
+        <div className="space-y-6">
+          {/* Security & Admin PIN Update */}
+          <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#141416] space-y-6 shadow-xs">
           <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3">
             <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
               <Lock className="w-4 h-4 text-purple-500" />
@@ -330,6 +340,143 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Right Bottom: SMTP & Email Notification System */}
+        <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#141416] space-y-5 shadow-xs">
+          <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                <Mail className="w-4 h-4 text-blue-500" />
+                <span>Sistem SMTP & Notifikasi Email</span>
+              </h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Pengiriman resi & lisensi digital otomatis ke email pembeli
+              </p>
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              Aktif
+            </span>
+          </div>
+
+          <div className="space-y-2.5 text-xs">
+            <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 space-y-1.5">
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span className="flex items-center gap-1.5"><Server className="w-3.5 h-3.5 text-zinc-400" /> Host:</span>
+                <span className="font-mono font-semibold text-zinc-900 dark:text-white">smtp.sumopod.com</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span>Port & Protokol:</span>
+                <span className="font-mono font-medium text-zinc-900 dark:text-white">465 (SSL Encrypted)</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span>Akun Pengirim:</span>
+                <span className="font-mono text-zinc-500 truncate max-w-[200px]">cmv2iw8n9bka...</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span>Email Display:</span>
+                <span className="font-mono text-zinc-500">no-reply@pixelstore.oktaa.my.id</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="font-semibold text-zinc-700 dark:text-zinc-300 block">
+                Uji Coba Pengiriman Email:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  value={testEmailAddress}
+                  onChange={(e) => setTestEmailAddress(e.target.value)}
+                  placeholder="Masukkan email Anda (contoh@gmail.com)"
+                  className="flex-1 px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white text-xs focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={isTestingSmtp}
+                  onClick={async () => {
+                    if (!testEmailAddress.trim()) {
+                      showToast('error', 'Masukkan alamat email tujuan untuk uji coba kirim.');
+                      return;
+                    }
+                    setIsTestingSmtp(true);
+                    setSmtpTestResult(null);
+                    try {
+                      const res = await actions.adminTestSmtpConnection({
+                        testEmail: testEmailAddress.trim(),
+                      });
+                      if (res.error) {
+                        setSmtpTestResult({ success: false, message: res.error.message });
+                        showToast('error', res.error.message);
+                      } else if (res.data) {
+                        setSmtpTestResult({ success: true, message: res.data.message });
+                        showToast('success', res.data.message);
+                      }
+                    } catch (err) {
+                      const msg = (err as Error).message || 'Gagal mengetes SMTP';
+                      setSmtpTestResult({ success: false, message: msg });
+                      showToast('error', msg);
+                    } finally {
+                      setIsTestingSmtp(false);
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition flex items-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isTestingSmtp ? 'Mengirim...' : 'Kirim Tes'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-1 flex gap-2">
+              <button
+                type="button"
+                disabled={isTestingSmtp}
+                onClick={async () => {
+                  setIsTestingSmtp(true);
+                  setSmtpTestResult(null);
+                  try {
+                    const res = await actions.adminTestSmtpConnection({});
+                    if (res.error) {
+                      setSmtpTestResult({ success: false, message: res.error.message });
+                      showToast('error', res.error.message);
+                    } else if (res.data) {
+                      setSmtpTestResult({ success: true, message: res.data.message });
+                      showToast('success', res.data.message);
+                    }
+                  } catch (err) {
+                    const msg = (err as Error).message || 'Gagal cek koneksi SMTP';
+                    setSmtpTestResult({ success: false, message: msg });
+                    showToast('error', msg);
+                  } finally {
+                    setIsTestingSmtp(false);
+                  }
+                }}
+                className="w-full py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-blue-500" />
+                <span>Verifikasi Handshake Saja</span>
+              </button>
+            </div>
+
+            {smtpTestResult && (
+              <div
+                className={`p-3 rounded-xl border text-[11px] flex items-start gap-2 ${
+                  smtpTestResult.success
+                    ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
+                    : 'border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20 text-red-600 dark:text-red-400'
+                }`}
+              >
+                {smtpTestResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                )}
+                <div className="leading-relaxed">{smtpTestResult.message}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
       </div>
     </div>
   );

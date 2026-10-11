@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db, sqlClient, schema } from '@/db';
 import { insightXPro } from '@/lib/insightxpro/client';
+import { sendOrderFulfillmentEmail } from '@/lib/email/mailer';
 
 export interface FulfillmentResult {
   success: boolean;
@@ -130,6 +131,20 @@ export async function executeOrderFulfillment(
         updatedAt: new Date().toISOString(),
       })
       .where(eq(schema.orders.id, order.id));
+
+    // Send email asynchronously if customer email is valid
+    if (order.customerEmail && order.customerEmail.includes('@')) {
+      sendOrderFulfillmentEmail({
+        orderNumber: order.orderNumber,
+        customerEmail: order.customerEmail,
+        productName: productRecord[0]?.name || 'Lisensi Digital',
+        quantity: order.quantity,
+        totalIdr: order.amountIdr,
+        licenseCodes: codes,
+      }).catch((emailErr) => {
+        console.warn(`[SMTP] Failed to send receipt for order ${order.orderNumber}:`, emailErr);
+      });
+    }
 
     return {
       success: true,

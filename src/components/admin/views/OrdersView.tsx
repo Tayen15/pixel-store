@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Receipt,
   RotateCcw,
+  Mail,
 } from 'lucide-react';
 import { actions } from 'astro:actions';
 
@@ -38,6 +39,7 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
   const [isRetrying, setIsRetrying] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
 
   // Sync external selected order if prop changes
   React.useEffect(() => {
@@ -128,6 +130,22 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
       showToast('error', (err as Error).message);
     } finally {
       setIsCanceling(false);
+    }
+  };
+
+  const handleResendEmail = async (orderId: string) => {
+    setIsResendingEmail(true);
+    try {
+      const { data, error } = await actions.adminResendOrderEmail({ orderId });
+      if (error || !data) {
+        showToast('error', error?.message || 'Gagal mengirim ulang email.');
+        return;
+      }
+      showToast('success', data.message || 'Email lisensi berhasil dikirim ulang ke pembeli!');
+    } catch (err) {
+      showToast('error', (err as Error).message);
+    } finally {
+      setIsResendingEmail(false);
     }
   };
 
@@ -412,6 +430,17 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
               </a>
 
               <div className="flex items-center gap-2">
+                {inspectOrder.status === 'COMPLETED' && (
+                  <button
+                    onClick={() => handleResendEmail(inspectOrder.id)}
+                    disabled={isResendingEmail}
+                    className="px-3 py-2 rounded-xl border border-blue-200 dark:border-blue-900/60 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-xs font-semibold text-blue-600 dark:text-blue-400 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Mail className={`w-3.5 h-3.5 ${isResendingEmail ? 'animate-pulse' : ''}`} />
+                    <span>{isResendingEmail ? 'Mengirim...' : 'Kirim Ulang Email'}</span>
+                  </button>
+                )}
+
                 {inspectOrder.status !== 'CANCELED' && inspectOrder.status !== 'COMPLETED' && (
                   <button
                     onClick={() => handleCancelOrder(inspectOrder.id)}

@@ -25,6 +25,11 @@ import {
   getUserFromSession,
   deleteUserSession,
 } from '@/lib/auth/user';
+import {
+  verifySmtpConnection,
+  sendTestEmail,
+  sendOrderFulfillmentEmail,
+} from '@/lib/email/mailer';
 
 function cleanName(raw: string): string {
   return raw.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
@@ -482,7 +487,13 @@ export const server = {
     input: z.object({
       orderNumber: z.string().min(5),
     }),
-    handler: async ({ orderNumber }) => {
+    handler: async ({ orderNumber }, context) => {
+      // In production, simulation is strictly restricted to authenticated administrators
+      const sessionToken = context.cookies.get(ADMIN_COOKIE_NAME)?.value;
+      if (!verifyAdminSessionToken(sessionToken)) {
+        throw new Error('Fitur simulasi pembayaran dinonaktifkan di lingkungan produksi.');
+      }
+
       const records = await db
         .select()
         .from(schema.orders)
@@ -1628,6 +1639,111 @@ export const server = {
         .where(eq(schema.supportConversations.id, conversationId));
 
       return { success: true };
+    },
+  }),
+
+  /**
+   * Action: Test SMTP connection and optionally send a test email
+   */
+  adminTestSmtpConnection: defineAction({
+    input: z.object({
+      testEmail: z.string().email('Format email tidak valid').optional(),
+    }),
+    handler: async ({ testEmail }, context) => {
+      const sessionToken = context.cookies.get(ADMIN_COOKIE_NAME)?.value;
+      if (!verifyAdminSessionToken(sessionToken)) {
+        throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
+      }
+
+      const verifyRes = await verifySmtpConnection();
+      if (!verifyRes.success) {
+        throw new Error(verifyRes.message);
+      }
+
+      if (testEmail) {
+        const sendRes = await sendTestEmail(testEmail);
+        if (!sendRes.success) {
+          throw new Error(`Koneksi SMTP berhasil, namun gagal mengirim email tes: ${sendRes.error}`);
+        }
+        return {
+          success: true,
+          message: `Koneksi SMTP terverifikasi dan email uji coba berhasil dikirim ke ${testEmail}!`,
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Koneksi ke server SMTP (smtp.sumopod.com:465 SSL) berhasil dan siap digunakan!',
+      };
+    },
+  }),
+
+  /**
+   * Action: Admin manually resends digital license receipt email for a completed order
+   */
+  adminResendOrderEmail: defineAction({
+    input: z.object({
+      orderId: z.string().min(1),
+      targetEmail: z.string().email('Format email tidak valid').optional(),
+    }),
+    handler: async ({ orderId, targetEmail }, context) => {
+      const sessionToken = context.cookies.get(ADMIN_COOKIE_NAME)?.value;
+      if (!verifyAdminSessionToken(sessionToken)) {
+        throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
+      }
+
+      const ordersFound = await db
+        .select()
+        .from(schema.orders)
+        .where(eq(schema.orders.id, orderId));
+
+      if (ordersFound.length === 0) {
+        throw new Error('Pesanan tidak ditemukan.');
+      }
+
+      const order = ordersFound[0];
+      if (order.status !== 'COMPLETED') {
+        throw new Error('Hanya pesanan yang sudah COMPLETED (selesai) yang dapat dikirimi email lisensi.');
+      }
+
+      let codes: string[] = [];
+      try {
+        codes = order.licenseCodes ? JSON.parse(order.licenseCodes) : [];
+      } catch {
+        codes = [];
+      }
+
+      if (codes.length === 0) {
+        throw new Error('Tidak ada kode lisensi yang tersimpan pada pesanan ini.');
+      }
+
+      const recipient = targetEmail || order.customerEmail;
+      if (!recipient || !recipient.includes('@')) {
+        throw new Error('Alamat email tujuan tidak valid.');
+      }
+
+      const productRecord = await db
+        .select()
+        .from(schema.productsCache)
+        .where(eq(schema.productsCache.id, order.productId));
+
+      const sendRes = await sendOrderFulfillmentEmail({
+        orderNumber: order.orderNumber,
+        customerEmail: recipient,
+        productName: productRecord[0]?.name || 'Lisensi Digital',
+        quantity: order.quantity,
+        totalIdr: order.amountIdr,
+        licenseCodes: codes,
+      });
+
+      if (!sendRes.success) {
+        throw new Error(`Gagal mengirim email: ${sendRes.error}`);
+      }
+
+      return {
+        success: true,
+        message: `Email lisensi berhasil dikirim ulang ke ${recipient}!`,
+      };
     },
   }),
 };
