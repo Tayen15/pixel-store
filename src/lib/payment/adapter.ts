@@ -25,7 +25,7 @@ export interface InvoiceResult {
 
 export interface IPaymentGateway {
   createQRISInvoice(input: CreateInvoiceInput): Promise<InvoiceResult>;
-  verifyWebhook(rawBody: string, signature: string, secret?: string): boolean;
+  verifyWebhook(rawBody: string, signature: string, customSecretOrHeaders?: string | Record<string, string | null | undefined>): boolean;
 }
 
 /**
@@ -161,6 +161,7 @@ export class TripayPaymentGateway implements IPaymentGateway {
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { SumopodPaymentGateway } from './sumopod';
 import { DoitPaymentGateway } from './doit';
 import { TakoPaymentGateway } from './tako';
 
@@ -189,9 +190,23 @@ function getEnv(key: string): string {
 
 /**
  * Factory to return the active payment gateway based on environment variables.
- * Prioritizes Doit.id Payment Gateway, with fallback to Tako, Tripay, or Mock.
+ * Prioritizes SumoPod Payment Gateway, then Doit.id, Tako, Tripay, or Mock.
  */
 export function getPaymentGateway(): IPaymentGateway {
+  const sumopodApiKey = getEnv('SUMOPOD_API_KEY');
+  const sumopodBaseUrl = getEnv('SUMOPOD_BASE_URL') || 'https://api-pay-sandbox.sumopod.com';
+  const sumopodSigningSecret = getEnv('SUMOPOD_SIGNING_SECRET');
+  const sumopodWebhookToken = getEnv('SUMOPOD_WEBHOOK_TOKEN');
+
+  if (sumopodApiKey) {
+    return new SumopodPaymentGateway(
+      sumopodApiKey,
+      sumopodBaseUrl,
+      sumopodSigningSecret,
+      sumopodWebhookToken
+    );
+  }
+
   const doitApiKey = getEnv('DOIT_API_KEY');
   const doitBaseUrl = getEnv('DOIT_BASE_URL') || 'https://pay.doit.id';
   const doitSigningSecret = getEnv('DOIT_SIGNING_SECRET') || getEnv('DOIT_WEBHOOK_SECRET');

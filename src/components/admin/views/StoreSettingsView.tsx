@@ -375,12 +375,12 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
               <span className="text-[11px] font-medium text-zinc-500">Endpoint Webhook Resmi Toko:</span>
               <div className="flex items-center justify-between gap-2 pt-0.5">
                 <code className="font-mono text-xs text-zinc-900 dark:text-zinc-100 truncate">
-                  https://pixelstore.oktaa.my.id/api/webhooks/doit
+                  https://pixelstore.oktaa.my.id/api/webhooks/sumopod
                 </code>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText('https://pixelstore.oktaa.my.id/api/webhooks/doit');
+                    navigator.clipboard.writeText('https://pixelstore.oktaa.my.id/api/webhooks/sumopod');
                     showToast('success', 'URL Webhook berhasil disalin!');
                   }}
                   className="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition cursor-pointer shrink-0"
@@ -390,7 +390,7 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
                 </button>
               </div>
               <p className="text-[10px] text-zinc-400">
-                Pasang URL ini di menu Developer &gt; Webhook portal Doit.id.
+                Pasang URL ini di tab Settings portal SumoPod Payment Gateway.
               </p>
             </div>
 
