@@ -87,3 +87,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # -------------------------------------------------------------
+      # Job 3: Trigger DockerAZ Auto-Deploy Webhook
+      # -------------------------------------------------------------
+      - name: Trigger DockerAZ Auto-Deploy
+        if: env.DOCKERAZ_WEBHOOK != ''
+        env:
+          DOCKERAZ_WEBHOOK: ${{ secrets.DOCKERAZ_WEBHOOK_URL }}
+        run: |
+          echo "Pemicu auto-deploy DockerAZ dijalankan..."
+          curl -s -X POST "$DOCKERAZ_WEBHOOK"
+
