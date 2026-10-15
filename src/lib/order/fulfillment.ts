@@ -170,6 +170,20 @@ export async function executeOrderFulfillment(
     // Payment was received, but upstream stock ran out or failed
     const errorMsg = (fulfillErr as Error).message || 'Stok produk wholesale habis';
 
+    // Auto-deplete product stock in local cache so subsequent buyers cannot order it
+    try {
+      await db
+        .update(schema.productsCache)
+        .set({
+          stock: 0,
+          inStock: false,
+          isActive: false,
+        })
+        .where(eq(schema.productsCache.id, order.productId));
+    } catch (cacheErr) {
+      console.warn('Failed to auto-deplete local product cache on supplier failure:', cacheErr);
+    }
+
     await db
       .update(schema.orders)
       .set({

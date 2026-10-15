@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, notInArray } from 'drizzle-orm';
 import { db, schema } from '@/db';
 import { insightXPro, type InsightProduct } from '@/lib/insightxpro/client';
 import { calculateRetailPriceIdr, getDynamicPricingConfig } from '@/lib/pricing/engine';
@@ -60,7 +60,8 @@ let lastSyncTimestamp = 0;
 const REALTIME_SYNC_INTERVAL_MS = 30 * 1000;
 
 /**
- * Synchronizes catalog from InsightXPro live into SQLite products_cache.
+ * Synchronizes catalog from InsightXPro live into products_cache.
+ * Accurately updates active products and deactivates any products that are out of stock or withdrawn by supplier.
  * @param force If true, bypasses the 30-second throttle (used by Admin button).
  */
 export async function syncRealtimeCatalog(force = false): Promise<{ count: number; products: InsightProduct[]; isFresh: boolean }> {
@@ -76,15 +77,26 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
     return { count: 0, products: [], isFresh: false };
   }
 
-  // Atomic upsert with fresh prices, logos, and realtime stock counts (avoids FK violation on orders)
+  // 1. Atomic upsert with fresh prices, logos, and realtime stock counts (avoids FK violation on orders)
   for (const item of rawProducts) {
-    const baseUsdt = Number(item.price_usdt ?? item.price ?? (item as any).base_price_usdt ?? 0);
+    const baseUsdt = Number(item.price_usdt ?? item.price ?? (item as unknown as { base_price_usdt?: number | string }).base_price_usdt ?? 0);
     const pricing = calculateRetailPriceIdr(baseUsdt, 1, dynamicPricing);
     const category = categorizeProduct(item.name);
     const name = cleanProductName(item.name);
-    const cleanDescription = (item as any).description_text || item.description || 'Lisensi original resmi siap aktivasi.';
+    const cleanDescription = (item as unknown as { description_text?: string }).description_text || item.description || 'Lisensi original resmi siap aktivasi.';
     const logoUrl = getRealBrandLogoUrl(name);
-    const stockCount = typeof item.stock === 'number' ? item.stock : ((item as any).available ? 99 : 0);
+
+    // Rigorous stock & availability calculation
+    const isExplicitlyUnavailable = item.available === false;
+    let stockCount = 0;
+    if (!isExplicitlyUnavailable) {
+      if (typeof item.stock === 'number') {
+        stockCount = Math.max(0, item.stock);
+      } else if (item.stock === true || item.available === true) {
+        stockCount = 99;
+      }
+    }
+    const inStock = !isExplicitlyUnavailable && stockCount > 0;
 
     await db
       .insert(schema.productsCache)
@@ -97,7 +109,8 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
         retailPriceIdr: pricing.unitPriceIdr,
         imageUrl: logoUrl,
         stock: stockCount,
-        inStock: stockCount > 0,
+        inStock,
+        isActive: inStock,
       })
       .onConflictDoUpdate({
         target: schema.productsCache.supplierProductId,
@@ -109,12 +122,31 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
           retailPriceIdr: sql`COALESCE(products_cache.custom_retail_price_idr, ${pricing.unitPriceIdr})`,
           imageUrl: logoUrl,
           stock: stockCount,
-          inStock: stockCount > 0,
+          inStock,
+          isActive: inStock,
           lastSyncedAt: sql`CURRENT_TIMESTAMP`,
         },
       });
   }
 
+  // 2. Mark products no longer provided by supplier as out-of-stock and inactive
+  const activeSupplierIds = rawProducts
+    .map((p) => p.id)
+    .filter((id): id is number => typeof id === 'number' && id > 0);
+
+  if (activeSupplierIds.length > 0) {
+    await db
+      .update(schema.productsCache)
+      .set({
+        stock: 0,
+        inStock: false,
+        isActive: false,
+        lastSyncedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(notInArray(schema.productsCache.supplierProductId, activeSupplierIds));
+  }
+
   lastSyncTimestamp = Date.now();
   return { count: rawProducts.length, products: rawProducts, isFresh: true };
 }
+

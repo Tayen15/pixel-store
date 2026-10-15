@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { cookies } from 'next/headers';
 import crypto from 'node:crypto';
 import QRCode from 'qrcode';
-import { eq, desc, or, and, asc } from 'drizzle-orm';
+import { eq, desc, or, and, asc, sql } from 'drizzle-orm';
 import { db, schema, sqlClient } from '@/db';
 import { insightXPro } from '@/lib/insightxpro/client';
 import { calculateRetailPriceIdr, getDynamicPricingConfig } from '@/lib/pricing/engine';
@@ -457,6 +457,11 @@ export async function checkout(rawInput: {
       throw new Error(`Maksimal pembelian adalah ${config.orders.maxQuantityPerOrder} lisensi per transaksi.`);
     }
 
+    // Ensure catalog cache is fresh (throttled to 30s)
+    try {
+      await syncRealtimeCatalog(false);
+    } catch {}
+
     // 1. Fetch product from local DB cache
     const cachedProducts = await db
       .select()
@@ -476,7 +481,8 @@ export async function checkout(rawInput: {
 
         const baseUsdt = Number(found.price ?? 0);
         const pricing = calculateRetailPriceIdr(baseUsdt, 1, dynamicPricing);
-        const stockCount = typeof found.stock === 'number' ? found.stock : (found.available ? 99 : 0);
+        const isAvail = found.available !== false;
+        const stockCount = typeof found.stock === 'number' ? Math.max(0, found.stock) : (isAvail ? 99 : 0);
 
         const inserted = await db
           .insert(schema.productsCache)
@@ -488,7 +494,8 @@ export async function checkout(rawInput: {
             basePriceUsdt: baseUsdt,
             retailPriceIdr: pricing.unitPriceIdr,
             stock: stockCount,
-            inStock: stockCount > 0,
+            inStock: isAvail && stockCount > 0,
+            isActive: isAvail && stockCount > 0,
           })
           .returning();
 
@@ -498,9 +505,51 @@ export async function checkout(rawInput: {
       }
     }
 
-    // 2. Pre-flight check: Storefront stock and supplier balance validation
+    // 2. Pre-flight check: Storefront stock and product active status validation
+    if (product.isActive === false) {
+      throw new Error('Mohon maaf, produk ini sedang tidak aktif atau ditarik dari katalog supplier.');
+    }
+
     if (product.inStock === false || (product.stock !== null && product.stock !== undefined && product.stock < input.quantity)) {
       throw new Error(`Stok produk tidak mencukupi untuk jumlah pembelian ini. Sisa stok: ${product.stock ?? 0} unit.`);
+    }
+
+    // 2b. Realtime Wholesale Supplier Stock & Liveness Verification
+    try {
+      const supplierProducts = await insightXPro.getProducts();
+      const supplierItem = supplierProducts.find((p) => p.id === product.supplierProductId);
+      if (!supplierItem) {
+        // Supplier has withdrawn or completely depleted this product
+        await db
+          .update(schema.productsCache)
+          .set({
+            stock: 0,
+            inStock: false,
+            isActive: false,
+            lastSyncedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.productsCache.id, product.id));
+        throw new Error('Mohon maaf, stok produk ini baru saja habis di supplier wholesale. Pembelian tidak dapat dilanjutkan agar pembayaran Anda tidak tertahan.');
+      }
+
+      const isSupplierAvailable = supplierItem.available !== false;
+      const supplierStock = typeof supplierItem.stock === 'number' ? supplierItem.stock : (isSupplierAvailable ? 99 : 0);
+      if (!isSupplierAvailable || supplierStock < input.quantity) {
+        await db
+          .update(schema.productsCache)
+          .set({
+            stock: supplierStock,
+            inStock: isSupplierAvailable && supplierStock > 0,
+            lastSyncedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.productsCache.id, product.id));
+        throw new Error(`Mohon maaf, sisa stok produk ini di supplier hanya ${supplierStock} unit. Pembelian tidak dapat diproses.`);
+      }
+    } catch (err) {
+      if ((err as Error).message.includes('Mohon maaf')) {
+        throw err;
+      }
+      console.warn('Realtime supplier stock pre-flight check notice:', (err as Error).message);
     }
 
     const requiredUsdt = product.basePriceUsdt * input.quantity;
@@ -816,6 +865,11 @@ export async function getLatestProductPrice(rawInput: { productId: number; quant
       quantity: z.number().int().min(1).default(1),
     }).parse(rawInput);
 
+    // Sync catalog if throttle window passed to keep stock fresh
+    try {
+      await syncRealtimeCatalog(false);
+    } catch {}
+
     const dynamicPricing = await getDynamicPricingConfig();
     const product = await db
       .select()
@@ -836,13 +890,19 @@ export async function getLatestProductPrice(rawInput: { productId: number; quant
     const isPaymentEnabled = config.store.isPaymentEnabled !== false;
     const paymentDisabledReason = config.store.paymentDisabledReason || 'Sistem pembayaran sedang dinonaktifkan sementara untuk pemeliharaan/migrasi.';
 
-    let canPurchase = Boolean(product.inStock && (product.stock === null || product.stock >= quantity));
+    const isProductActive = product.isActive !== false;
+    const hasSufficientStock = Boolean(product.inStock && (product.stock === null || product.stock >= quantity));
+    let canPurchase = isProductActive && hasSufficientStock;
     let unavailableReason: string | null = null;
 
     if (!isPaymentEnabled) {
       canPurchase = false;
       unavailableReason = paymentDisabledReason;
-    } else if (!canPurchase) {
+    } else if (!isProductActive) {
+      canPurchase = false;
+      unavailableReason = 'Produk sedang tidak aktif atau ditarik dari katalog supplier';
+    } else if (!hasSufficientStock) {
+      canPurchase = false;
       unavailableReason = 'Stok produk habis';
     } else {
       try {
@@ -863,7 +923,7 @@ export async function getLatestProductPrice(rawInput: { productId: number; quant
         unitPriceIdr: effectiveUnitPrice,
         totalAmountIdr: effectiveUnitPrice * quantity,
         stock: product.stock ?? 0,
-        inStock: Boolean(product.inStock && (product.stock === null || product.stock > 0)),
+        inStock: Boolean(isProductActive && product.inStock && (product.stock === null || product.stock > 0)),
         isCustomPrice: Boolean(product.customRetailPriceIdr && product.customRetailPriceIdr > 0),
         canPurchase,
         unavailableReason,
