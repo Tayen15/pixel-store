@@ -18,7 +18,7 @@ const PUBLIC_SKIP_ROUTES = [
   '/webhook',
 ];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   try {
@@ -68,7 +68,7 @@ export async function middleware(request: NextRequest) {
       }
     }
   } catch (err) {
-    console.warn('[middleware] Auth processing warning:', (err as Error).message);
+    console.warn('[proxy] Auth processing warning:', (err as Error).message);
     return NextResponse.next();
   }
 }
