@@ -713,11 +713,11 @@ export async function getOrderStatus(rawInput: { orderNumber: string }) {
     }
 
     if (order.status === 'PENDING_PAYMENT' && payment) {
-      if (payment.gatewayProvider === 'doit' && payment.gatewayReference) {
+      if ((payment.gatewayProvider === 'sumopod' || payment.gatewayProvider === 'doit') && (payment.gatewayReference || payment.paymentUrl)) {
         const gateway = getPaymentGateway();
         if ('checkPaymentStatus' in gateway) {
           try {
-            const liveStatus = await (gateway as any).checkPaymentStatus(payment.gatewayReference);
+            const liveStatus = await (gateway as any).checkPaymentStatus(payment.gatewayReference, payment.paymentUrl);
             if (liveStatus?.status === 'paid') {
               await executeOrderFulfillment(order.id, 'client_polling');
 
@@ -729,7 +729,7 @@ export async function getOrderStatus(rawInput: { orderNumber: string }) {
               if (updatedRecords[0]) {
                 order = updatedRecords[0];
               }
-            } else if (liveStatus?.status === 'canceled') {
+            } else if (liveStatus?.status === 'canceled' || liveStatus?.status === 'failed') {
               await db
                 .update(schema.orders)
                 .set({

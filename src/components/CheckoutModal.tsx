@@ -653,28 +653,47 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
 
               {/* Pure QR Code Card */}
-              <div className="p-4 sm:p-5 bg-white border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-md inline-block text-zinc-900 max-w-[320px] w-full text-left">
+              <div className="p-4 sm:p-5 bg-white border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-md inline-block text-zinc-900 max-w-[340px] w-full text-left">
+                {/* Official QRIS Header */}
+                <div className="flex items-center justify-between pb-3 mb-2 border-b border-zinc-100">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black tracking-wider text-zinc-900 font-sans">
+                      QRIS
+                    </span>
+                    <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-tight">
+                      Pembayaran Nasional
+                    </span>
+                  </div>
+                  <div className="text-[10px] font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md font-mono">
+                    Otomatis Verifikasi
+                  </div>
+                </div>
 
                 {/* Scannable QR Code Bitmap */}
-                <div className="w-60 h-60 mx-auto bg-white rounded-xl flex flex-col items-center justify-center p-1 relative overflow-hidden border border-zinc-100">
+                <div className="w-64 h-64 mx-auto bg-white rounded-xl flex flex-col items-center justify-center p-2 relative overflow-hidden border border-zinc-100 shadow-inner">
                   {isQrLoading || !renderedQrUrl ? (
                     <div className="flex flex-col items-center justify-center gap-2 text-zinc-400 py-10">
                       <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
-                      <span className="text-xs font-medium">Menyiapkan QR Code...</span>
+                      <span className="text-xs font-medium">Menyiapkan QR Code QRIS...</span>
                     </div>
                   ) : (
                     <img
                       src={renderedQrUrl}
                       alt={`QRIS ${orderData.orderNumber}`}
                       onError={handleQrImgError}
-                      className="w-56 h-56 object-contain rounded-md select-none"
+                      className="w-60 h-60 object-contain rounded-md select-none"
                     />
                   )}
                 </div>
+
+                {/* Subtext Banking logos hint */}
+                <p className="text-[10px] text-center text-zinc-400 pt-2 font-medium leading-tight">
+                  BCA • Mandiri • BRI • BNI • GoPay • OVO • DANA • ShopeePay
+                </p>
               </div>
 
               {/* Quick Action: Download QR */}
-              <div className="flex items-center justify-center gap-2 pt-0.5 max-w-[320px] mx-auto">
+              <div className="flex items-center justify-center gap-2 pt-0.5 max-w-[340px] mx-auto">
                 <button
                   type="button"
                   onClick={handleDownloadQr}
@@ -683,7 +702,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   title="Unduh QR"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Unduh Gambar QR</span>
+                  <span>Unduh Gambar QR (Bayar dari Galeri HP)</span>
                 </button>
               </div>
 
@@ -727,7 +746,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               {/* Live Polling Status Indicator */}
               <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 pt-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                <span>Menunggu pembayaran...</span>
+                <span>Menunggu pembayaran... (langsung di web Pixel)</span>
               </div>
 
               {/* Cancel Payment Action Button */}
