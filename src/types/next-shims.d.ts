@@ -65,7 +65,7 @@ declare module 'next/server' {
 
   export class NextResponse<Body = unknown> extends Response {
     static json<JsonBody>(data: JsonBody, init?: ResponseInit): NextResponse<JsonBody>;
-    static redirect(url: string | URL, status?: number): NextResponse<never>;
+    static redirect(url: string | URL, init?: number | ResponseInit): NextResponse<never>;
     static next(init?: any): NextResponse<never>;
     readonly cookies: any;
   }
