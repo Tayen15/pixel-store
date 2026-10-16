@@ -47,6 +47,7 @@ interface UserAccountModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUserChanged?: (user: AuthenticatedUser | null) => void;
+  customNotice?: string;
 }
 
 export interface AuthenticatedUser {
@@ -72,7 +73,8 @@ export interface UserOrder {
 export const UserAccountModal: React.FC<UserAccountModalProps> = ({ 
   isOpen, 
   onClose,
-  onUserChanged 
+  onUserChanged,
+  customNotice 
 }) => {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const [activeTab, setActiveTab] = useState<'login' | 'register' | 'orders' | 'reset'>('login');
@@ -443,6 +445,16 @@ export const UserAccountModal: React.FC<UserAccountModalProps> = ({
           ) : (
             /* Logged Out: Login or Register */
             <div className="space-y-4">
+              {customNotice && (
+                <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 rounded-2xl flex items-start gap-2.5 text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
+                  <ShieldCheck className="w-4 h-4 text-[#2563EB] dark:text-[#3B82F6] shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block mb-0.5">Wajib Masuk Akun Sebelum Membeli</span>
+                    <span>{customNotice}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Tab Selector */}
               <div className="flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800">
                 <button

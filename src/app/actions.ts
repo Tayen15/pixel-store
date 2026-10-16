@@ -426,18 +426,14 @@ export async function checkout(rawInput: {
     }).parse(rawInput);
 
     const currentUser = await getEffectiveUser();
-
-    let customerEmail = (input.email && input.email.includes('@')) ? input.email.trim() : 'guest@pixelstore.com';
-    let customerWhatsapp = (input.whatsapp && input.whatsapp.trim().length >= 8) ? input.whatsapp.trim() : '081200000000';
-
-    if (currentUser) {
-      if (customerEmail === 'guest@pixelstore.com') {
-        customerEmail = currentUser.email;
-      }
-      if (customerWhatsapp === '081200000000' && currentUser.phone) {
-        customerWhatsapp = currentUser.phone;
-      }
+    if (!currentUser) {
+      throw new Error('Silakan masuk ke akun Anda terlebih dahulu sebelum melakukan pembelian agar lisensi digital tersimpan aman dan terkirim ke email Anda.');
     }
+
+    let customerEmail = currentUser.email;
+    let customerWhatsapp = (input.whatsapp && input.whatsapp.trim().length >= 8) 
+      ? input.whatsapp.trim() 
+      : (currentUser.phone || '081200000000');
 
     const config = await getSystemConfig();
     const dynamicPricing = await getDynamicPricingConfig();
@@ -556,10 +552,10 @@ export async function checkout(rawInput: {
     try {
       const balanceInfo = await insightXPro.getBalance();
       if (typeof balanceInfo?.balance === 'number' && balanceInfo.balance < requiredUsdt) {
-        throw new Error('Mohon maaf, saldo kuota produk sedang kosong (stok restock). Pembelian sementara tidak dapat diproses.');
+        throw new Error('Mohon maaf, saldo kuota pengadaan produk sedang kosong (dalam proses restock). Silakan hubungi Customer Service (CS) kami melalui menu Live Support.');
       }
     } catch (err) {
-      if ((err as Error).message.includes('saldo kuota produk')) {
+      if ((err as Error).message.includes('saldo kuota pengadaan') || (err as Error).message.includes('restock')) {
         throw err;
       }
       console.warn('Pre-flight balance check warning:', (err as Error).message);
@@ -923,6 +919,7 @@ export async function getLatestProductPrice(rawInput: { productId: number; quant
     const hasSufficientStock = Boolean(product.inStock && (product.stock === null || product.stock >= quantity));
     let canPurchase = isProductActive && hasSufficientStock;
     let unavailableReason: string | null = null;
+    let isSupplierBalanceLow = false;
 
     if (!isPaymentEnabled) {
       canPurchase = false;
@@ -939,9 +936,12 @@ export async function getLatestProductPrice(rawInput: { productId: number; quant
         const requiredUsdt = product.basePriceUsdt * quantity;
         if (typeof balanceInfo?.balance === 'number' && balanceInfo.balance < requiredUsdt) {
           canPurchase = false;
-          unavailableReason = 'Saldo kuota produk sedang kosong (restock)';
+          isSupplierBalanceLow = true;
+          unavailableReason = 'Saldo kuota pengadaan produk sedang kosong (restock). Silakan hubungi Customer Service kami.';
         }
-      } catch {}
+      } catch (err) {
+        console.warn('Realtime balance check notice in getLatestProductPrice:', err);
+      }
     }
 
     return {
@@ -955,6 +955,7 @@ export async function getLatestProductPrice(rawInput: { productId: number; quant
         inStock: Boolean(isProductActive && product.inStock && (product.stock === null || product.stock > 0)),
         isCustomPrice: Boolean(product.customRetailPriceIdr && product.customRetailPriceIdr > 0),
         canPurchase,
+        isSupplierBalanceLow,
         unavailableReason,
         isPaymentEnabled,
         paymentDisabledReason: isPaymentEnabled ? null : paymentDisabledReason,

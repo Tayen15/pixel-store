@@ -22,10 +22,13 @@ import {
   Download,
   XCircle,
   RotateCcw,
-  MessageCircle
+  MessageCircle,
+  User,
+  Headphones
 } from 'lucide-react';
 import { ServiceLogo } from './ServiceLogo';
 import { parseCatalogDescription } from './ProductDetailModal';
+import type { AuthenticatedUser } from './UserAccountModal';
 
 export interface ProductData {
   id: number;
@@ -62,6 +65,8 @@ interface CheckoutModalProps {
   onClose: () => void;
   isPaymentEnabled?: boolean;
   paymentDisabledReason?: string;
+  currentUser?: AuthenticatedUser | null;
+  onRequireLogin?: () => void;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({ 
@@ -71,6 +76,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   isPaymentEnabled = true,
   paymentDisabledReason,
+  currentUser = null,
+  onRequireLogin,
 }) => {
   const [step, setStep] = useState<'form' | 'qris' | 'success' | 'failed_supplier' | 'canceled' | 'expired'>(
     initialPendingOrder ? 'qris' : 'form'
@@ -80,6 +87,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [priceNotice, setPriceNotice] = useState<string | null>(null);
   const [isVerifyingPrice, setIsVerifyingPrice] = useState<boolean>(true);
   const [canPurchase, setCanPurchase] = useState<boolean>(isPaymentEnabled);
+  const [isSupplierBalanceLow, setIsSupplierBalanceLow] = useState<boolean>(false);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(
     isPaymentEnabled ? null : (paymentDisabledReason || 'Sistem pembayaran sedang dinonaktifkan sementara.')
   );
@@ -99,9 +107,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         if (!error && data) {
           if (data.canPurchase === false) {
             setCanPurchase(false);
+            setIsSupplierBalanceLow(Boolean(data.isSupplierBalanceLow));
             setUnavailableReason(data.unavailableReason || 'Stok / saldo kuota sedang kosong');
           } else {
             setCanPurchase(true);
+            setIsSupplierBalanceLow(false);
             setUnavailableReason(null);
           }
 
@@ -132,8 +142,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }, [initialQuantity, product?.id]);
 
   const [showOptionalFields, setShowOptionalFields] = useState(false);
-  const [email, setEmail] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [whatsapp, setWhatsapp] = useState(currentUser?.phone || '');
+
+  useEffect(() => {
+    if (currentUser?.email) {
+      setEmail(currentUser.email);
+    }
+    if (currentUser?.phone) {
+      setWhatsapp(currentUser.phone);
+    }
+  }, [currentUser]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -571,77 +590,127 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
               </div>
 
-              {/* Optional Archiving Accordion */}
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowOptionalFields(!showOptionalFields)}
-                  className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1 transition cursor-pointer py-1"
-                >
-                  <span>Kirim bukti ke WhatsApp / Email (Opsional)</span>
-                  {showOptionalFields ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-
-                {showOptionalFields && (
-                  <div className="mt-2.5 p-3.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5 animate-in fade-in duration-150">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
-                        Email Penerima (Opsional)
-                      </label>
-                      <input
-                        type="email"
-                        placeholder="nama@email.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white"
-                      />
+              {/* Account Status / Delivery Destination */}
+              {currentUser ? (
+                <div className="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-700/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-bold text-xs shrink-0">
+                      <ShieldCheck className="w-4 h-4" />
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
-                        Nomor WhatsApp (Opsional)
-                      </label>
-                      <input
-                        type="tel"
-                        placeholder="08123456789"
-                        value={whatsapp}
-                        onChange={(e) => setWhatsapp(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white"
-                      />
+                    <div className="min-w-0">
+                      <div className="text-[11px] text-zinc-400">Lisensi otomatis dikirim ke email:</div>
+                      <div className="font-bold text-zinc-900 dark:text-white truncate max-w-[210px]">{currentUser.email}</div>
                     </div>
                   </div>
-                )}
-              </div>
-
-              {/* Unavailable / Saldo notice */}
-              {unavailableReason && !canPurchase && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{unavailableReason}</span>
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold bg-emerald-100/60 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60 shrink-0">
+                    Akun Aktif
+                  </span>
+                </div>
+              ) : (
+                <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 rounded-2xl flex items-start gap-2.5 text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
+                  <ShieldCheck className="w-4 h-4 text-[#2563EB] dark:text-[#3B82F6] shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block mb-0.5">Wajib Masuk Akun Sebelum Melanjutkan</span>
+                    <span>Kode lisensi akan otomatis dikirimkan ke email Anda dan tersimpan di menu akun agar tidak hilang jika popup tertutup atau koneksi terputus.</span>
+                  </div>
                 </div>
               )}
 
-              {/* Submit CTA */}
-              <button
-                type="submit"
-                disabled={isLoading || !canPurchase || (product.stock !== undefined && product.stock <= 0)}
-                className="w-full py-3.5 px-4 bg-[#2563EB] hover:bg-blue-700 dark:bg-[#3B82F6] dark:hover:bg-blue-600 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Menyiapkan QRIS...</span>
-                  </>
-                ) : !canPurchase ? (
-                  <span>{unavailableReason || 'Stok / Saldo Kuota Kosong'}</span>
-                ) : (product.stock !== undefined && product.stock <= 0) ? (
-                  <span>Stok Produk Habis</span>
-                ) : (
-                  <>
-                    <span>Bayar — Rp {totalAmount.toLocaleString('id-ID')}</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+              {/* Optional Archiving Accordion (WhatsApp) */}
+              {currentUser && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowOptionalFields(!showOptionalFields)}
+                    className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1 transition cursor-pointer py-1"
+                  >
+                    <span>Salinan bukti ke WhatsApp (Opsional)</span>
+                    {showOptionalFields ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {showOptionalFields && (
+                    <div className="mt-2.5 p-3.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-700 space-y-2.5 animate-in fade-in duration-150">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
+                          Nomor WhatsApp (Opsional)
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder="08123456789"
+                          value={whatsapp}
+                          onChange={(e) => setWhatsapp(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Saldo Supplier Kurang / Restock Banner & Action */}
+              {isSupplierBalanceLow ? (
+                <div className="space-y-3 pt-1">
+                  <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl space-y-2 text-left">
+                    <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-xs">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                      <span>Saldo Kuota Sedang Dalam Pengisian Ulang</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                      Mohon maaf, pengadaan otomatis produk ini sedang menunggu proses restock saldo kuota supplier. Silakan hubungi Customer Service kami untuk bantuan pemesanan atau jadwal ketersediaan kuota.
+                    </p>
+                  </div>
+
+                  <a
+                    href={`/support?productId=${product.id}&productName=${encodeURIComponent(product.name)}&source=restock`}
+                    className="w-full py-3.5 px-4 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm text-center cursor-pointer"
+                  >
+                    <Headphones className="w-4 h-4" />
+                    <span>Hubungi CS (Customer Service)</span>
+                  </a>
+                </div>
+              ) : !currentUser ? (
+                /* Must Login Button */
+                <button
+                  type="button"
+                  onClick={() => onRequireLogin?.()}
+                  className="w-full py-3.5 px-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <User className="w-4 h-4" />
+                  <span>Masuk Akun untuk Membeli</span>
+                </button>
+              ) : (
+                /* Normal Submit CTA for logged in users */
+                <>
+                  {unavailableReason && !canPurchase && (
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{unavailableReason}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isLoading || !canPurchase || (product.stock !== undefined && product.stock <= 0)}
+                    className="w-full py-3.5 px-4 bg-[#2563EB] hover:bg-blue-700 dark:bg-[#3B82F6] dark:hover:bg-blue-600 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Menyiapkan QRIS...</span>
+                      </>
+                    ) : !canPurchase ? (
+                      <span>{unavailableReason || 'Stok / Saldo Kuota Kosong'}</span>
+                    ) : (product.stock !== undefined && product.stock <= 0) ? (
+                      <span>Stok Produk Habis</span>
+                    ) : (
+                      <>
+                        <span>Bayar — Rp {totalAmount.toLocaleString('id-ID')}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
             </form>
           )}
 
@@ -854,6 +923,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <h4 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-1">
                   Akses Produk Anda
                 </h4>
+                <div className="mt-2.5 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-left text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <p className="text-[11px] leading-relaxed">
+                    Salinan lisensi ini juga telah otomatis dikirim ke email <strong>{currentUser?.email || email}</strong> dan tersimpan permanen di riwayat <a href="/user" className="underline font-bold hover:text-emerald-900 dark:hover:text-white">Akun Saya</a>.
+                  </p>
+                </div>
               </div>
 
               {/* Credentials & License / Registration Links Cards per DESIGN.md Section 4.D */}

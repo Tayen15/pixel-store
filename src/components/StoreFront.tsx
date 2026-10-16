@@ -87,6 +87,20 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(
     null,
   );
+  const [pendingCheckout, setPendingCheckout] = useState<{
+    product: ProductItem;
+    quantity: number;
+  } | null>(null);
+
+  const handleInitiatePurchase = (product: ProductItem, quantity: number = 1) => {
+    if (!currentUser) {
+      setPendingCheckout({ product, quantity });
+      setIsUserModalOpen(true);
+      return;
+    }
+    setSelectedQuantity(quantity);
+    setSelectedProduct(product);
+  };
 
   const handleReloadPrices = async () => {
     if (isReloadingPrice) return;
@@ -433,10 +447,7 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
                       ) : (
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedQuantity(1);
-                            setSelectedProduct(item);
-                          }}
+                          onClick={() => handleInitiatePurchase(item, 1)}
                           className="py-2 px-3.5 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 rounded-xl text-xs font-semibold transition flex items-center gap-1 shadow-xs group-hover:translate-x-0.5 cursor-pointer"
                         >
                           <span>Beli</span>
@@ -461,6 +472,14 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
           product={selectedProduct}
           initialQuantity={selectedQuantity}
           initialPendingOrder={restoredPendingOrder}
+          currentUser={currentUser}
+          onRequireLogin={() => {
+            if (selectedProduct) {
+              setPendingCheckout({ product: selectedProduct, quantity: selectedQuantity });
+              setSelectedProduct(null);
+              setIsUserModalOpen(true);
+            }
+          }}
           onClose={() => {
             setSelectedProduct(null);
             setRestoredPendingOrder(null);
@@ -476,8 +495,7 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
         onClose={() => setDetailProduct(null)}
         onBuy={(prod, qty) => {
           setDetailProduct(null);
-          setSelectedQuantity(qty || 1);
-          setSelectedProduct(prod);
+          handleInitiatePurchase(prod, qty || 1);
         }}
       />
 
@@ -488,8 +506,24 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
 
       <UserAccountModal
         isOpen={isUserModalOpen}
-        onClose={() => setIsUserModalOpen(false)}
-        onUserChanged={setCurrentUser}
+        customNotice={
+          pendingCheckout
+            ? 'Masuk ke akun Anda untuk melanjutkan pembelian. Lisensi akan otomatis dikirimkan ke email Anda dan tersimpan aman di akun Anda jika popup pembayaran tertutup.'
+            : undefined
+        }
+        onClose={() => {
+          setIsUserModalOpen(false);
+          setPendingCheckout(null);
+        }}
+        onUserChanged={(user) => {
+          setCurrentUser(user);
+          if (user && pendingCheckout) {
+            setSelectedProduct(pendingCheckout.product);
+            setSelectedQuantity(pendingCheckout.quantity);
+            setPendingCheckout(null);
+            setIsUserModalOpen(false);
+          }
+        }}
       />
 
       {/* Floating Action Button: Reload Price (Pojok Kanan Bawah) */}
