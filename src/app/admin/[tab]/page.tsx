@@ -8,7 +8,7 @@ import { getLiveUsdtRate } from '@/lib/pricing/fx-service';
 import { getSystemConfig } from '@/lib/settings/service';
 import { desc } from 'drizzle-orm';
 import { getAdminSession, getAdminUsersList } from '@/lib/auth/admin';
-import { syncRealtimeCatalog } from '@/lib/catalog/service';
+import { syncRealtimeCatalog, triggerBackgroundCatalogSyncIfNeeded } from '@/lib/catalog/service';
 
 export const revalidate = 0;
 
@@ -21,6 +21,9 @@ export default async function AdminTabPage({ params }: AdminTabPageProps) {
   if (!adminState.isAuthenticated) {
     redirect('/admin/login');
   }
+
+  // Non-blocking background catalog sync check
+  triggerBackgroundCatalogSyncIfNeeded();
 
   const { tab } = await params;
   const validTabs = ['overview', 'orders', 'catalog', 'chats', 'users', 'pricing', 'settings'];

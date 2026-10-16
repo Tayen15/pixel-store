@@ -8,7 +8,7 @@ import { getLiveUsdtRate } from '@/lib/pricing/fx-service';
 import { getSystemConfig } from '@/lib/settings/service';
 import { desc } from 'drizzle-orm';
 import { getAdminSession, getAdminUsersList } from '@/lib/auth/admin';
-import { syncRealtimeCatalog } from '@/lib/catalog/service';
+import { syncRealtimeCatalog, triggerBackgroundCatalogSyncIfNeeded } from '@/lib/catalog/service';
 
 export const revalidate = 0;
 
@@ -21,6 +21,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   if (!adminState.isAuthenticated) {
     redirect('/admin/login');
   }
+
+  // Non-blocking background catalog sync check
+  triggerBackgroundCatalogSyncIfNeeded();
 
   const config = await getSystemConfig();
   const liveFx = await getLiveUsdtRate(false);

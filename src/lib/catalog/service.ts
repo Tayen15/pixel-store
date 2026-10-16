@@ -56,26 +56,37 @@ export function cleanProductName(raw: string): string {
 }
 
 let lastSyncTimestamp = 0;
-// Throttle background syncs to 30 seconds to respect rate limits (60 req/min)
-const REALTIME_SYNC_INTERVAL_MS = 30 * 1000;
+let isSyncingInProgress = false;
+
+// Throttle for pre-flight checks (checkout & price verification): 20 seconds
+export const PREFLIGHT_CHECK_INTERVAL_MS = 20 * 1000;
+
+// Throttle for automatic background storefront sync: 3 minutes (180 seconds)
+export const BACKGROUND_AUTO_SYNC_INTERVAL_MS = 3 * 60 * 1000;
 
 /**
  * Synchronizes catalog from InsightXPro live into products_cache.
  * Accurately updates active products and deactivates any products that are out of stock or withdrawn by supplier.
- * @param force If true, bypasses the 30-second throttle (used by Admin button).
+ * @param force If true, bypasses the throttle (used by Admin button or scheduled sync).
  */
 export async function syncRealtimeCatalog(force = false): Promise<{ count: number; products: InsightProduct[]; isFresh: boolean }> {
+  if (isSyncingInProgress) {
+    return { count: 0, products: [], isFresh: false };
+  }
+
   const now = Date.now();
-  if (!force && now - lastSyncTimestamp < REALTIME_SYNC_INTERVAL_MS) {
+  if (!force && now - lastSyncTimestamp < PREFLIGHT_CHECK_INTERVAL_MS) {
     return { count: 0, products: [], isFresh: false };
   }
 
-  const dynamicPricing = await getDynamicPricingConfig();
-  const rawProducts = await insightXPro.getProducts();
+  isSyncingInProgress = true;
+  try {
+    const dynamicPricing = await getDynamicPricingConfig();
+    const rawProducts = await insightXPro.getProducts();
 
-  if (!rawProducts || rawProducts.length === 0) {
-    return { count: 0, products: [], isFresh: false };
-  }
+    if (!rawProducts || rawProducts.length === 0) {
+      return { count: 0, products: [], isFresh: false };
+    }
 
   // 1. Atomic upsert with fresh prices, logos, and realtime stock counts (avoids FK violation on orders)
   for (const item of rawProducts) {
@@ -146,7 +157,61 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
       .where(notInArray(schema.productsCache.supplierProductId, activeSupplierIds));
   }
 
-  lastSyncTimestamp = Date.now();
-  return { count: rawProducts.length, products: rawProducts, isFresh: true };
+    lastSyncTimestamp = Date.now();
+    return { count: rawProducts.length, products: rawProducts, isFresh: true };
+  } catch (err) {
+    console.warn('[Catalog Sync] Error during catalog sync:', (err as Error).message);
+    throw err;
+  } finally {
+    isSyncingInProgress = false;
+  }
 }
+
+/**
+ * Triggers non-blocking background catalog synchronization if the cache is older than minIntervalMs (default: 3 minutes).
+ * Designed for public SSR pages (e.g. HomePage, AdminOverview) to ensure zero latency for visitors.
+ */
+export function triggerBackgroundCatalogSyncIfNeeded(minIntervalMs = BACKGROUND_AUTO_SYNC_INTERVAL_MS): void {
+  const now = Date.now();
+  if (isSyncingInProgress || (lastSyncTimestamp > 0 && now - lastSyncTimestamp < minIntervalMs)) {
+    return;
+  }
+
+  // Fire-and-forget in background without blocking the caller
+  syncRealtimeCatalog(true)
+    .then((result) => {
+      if (result.isFresh) {
+        console.log(`[Smart Hybrid Sync] Background catalog updated: ${result.count} products refreshed.`);
+      }
+    })
+    .catch((err) => {
+      console.warn('[Smart Hybrid Sync] Background sync notice:', (err as Error).message);
+    });
+}
+
+let syncSchedulerTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Starts a recurring background timer (every 5 minutes by default) that runs
+ * independently of visitor traffic to guarantee catalog freshness.
+ */
+export function startAutoCatalogSyncScheduler(intervalMs = 5 * 60 * 1000): void {
+  if (syncSchedulerTimer) return; // Prevent duplicate timers
+
+  // Run initial background sync after 10 seconds of server boot
+  setTimeout(() => {
+    triggerBackgroundCatalogSyncIfNeeded(0);
+  }, 10 * 1000);
+
+  // Recurring interval
+  syncSchedulerTimer = setInterval(() => {
+    triggerBackgroundCatalogSyncIfNeeded(intervalMs - 15000);
+  }, intervalMs);
+
+  // Unref so it doesn't hold up process termination
+  if (syncSchedulerTimer.unref) {
+    syncSchedulerTimer.unref();
+  }
+}
+
 

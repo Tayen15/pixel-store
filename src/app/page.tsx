@@ -3,6 +3,7 @@ import { db, schema } from '@/db';
 import { calculateRetailPriceIdr, getDynamicPricingConfig } from '@/lib/pricing/engine';
 import { getSystemConfig } from '@/lib/settings/service';
 import { StoreFront, type ProductItem } from '@/components/StoreFront';
+import { syncRealtimeCatalog, triggerBackgroundCatalogSyncIfNeeded } from '@/lib/catalog/service';
 
 export const revalidate = 0; // Dynamic server rendering for fresh stock & pricing
 
@@ -10,7 +11,20 @@ export default async function HomePage() {
   const config = await getSystemConfig();
   const dynamicPricing = await getDynamicPricingConfig();
 
-  const cached = await db.select().from(schema.productsCache);
+  let cached = await db.select().from(schema.productsCache);
+
+  // Cold start guard: if cache is totally empty, seed it once synchronously
+  if (cached.length === 0) {
+    try {
+      await syncRealtimeCatalog(true);
+      cached = await db.select().from(schema.productsCache);
+    } catch (err) {
+      console.warn('Initial cold-start catalog sync error:', (err as Error).message);
+    }
+  } else {
+    // Smart Hybrid: Trigger non-blocking background auto-sync if cache older than 3 minutes (0ms delay for user)
+    triggerBackgroundCatalogSyncIfNeeded();
+  }
 
   const products: ProductItem[] = cached
     .filter((p) => p.isActive !== false)
