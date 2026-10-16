@@ -60,25 +60,53 @@ export function buildFallbackQrisString(orderNumber: string, amountIdr: number):
   return `${base}${crc}`;
 }
 
+async function resolvePymntCheckoutId(paymentUrl: string): Promise<string | null> {
+  if (!paymentUrl) return null;
+  try {
+    let finalUrl = paymentUrl;
+    // Follow redirect if URL is payment-links (e.g. /payment-links/{id} -> 307 -> /{checkoutId})
+    if (paymentUrl.includes('/payment-links/')) {
+      const res = await fetch(paymentUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok && res.url) {
+        finalUrl = res.url;
+      }
+    }
+    const urlObj = new URL(finalUrl);
+    const segments = urlObj.pathname.split('/').filter(Boolean);
+    return segments[segments.length - 1] || null;
+  } catch {
+    return null;
+  }
+}
+
 async function extractQrisFromPaymentLink(paymentLinkUrl: string, paymentId?: string): Promise<string | null> {
   if (!paymentLinkUrl) return null;
 
   try {
-    const urlObj = new URL(paymentLinkUrl);
-
     // 1. pymnt.app hosted checkout (Used by SumoPod live production)
-    if (urlObj.hostname.includes('pymnt.app')) {
-      const segments = urlObj.pathname.split('/').filter(Boolean);
-      const checkoutId = segments[segments.length - 1];
+    if (paymentLinkUrl.includes('pymnt.app')) {
+      const checkoutId = await resolvePymntCheckoutId(paymentLinkUrl);
       if (checkoutId) {
         const checkoutApiUrl = `https://checkout.pymnt.app/api/checkout/${checkoutId}`;
         const res = await fetch(checkoutApiUrl, {
-          headers: { Accept: 'application/json' },
+          headers: { 
+            Accept: 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          },
           signal: AbortSignal.timeout(4000),
         });
         if (res.ok) {
           const json = await res.json();
           if (json.paymentCode && String(json.paymentCode).startsWith('000201')) {
+            console.log('[SumoPod] Berhasil mengekstrak QRIS nasional ASPI dari pymnt.app:', json.paymentCode.slice(0, 30) + '...');
             return String(json.paymentCode);
           }
         }
@@ -86,16 +114,35 @@ async function extractQrisFromPaymentLink(paymentLinkUrl: string, paymentId?: st
     }
 
     // 2. SumoPod pay frontend (Used by SumoPod sandbox or custom domain)
-    if (urlObj.hostname.includes('sumopod.com') && paymentId) {
-      const publicApiUrl = `${urlObj.origin.replace('pay-', 'api-pay-').replace('pay.', 'api-pay.')}/api/v1/public/payments/${paymentId}/checkout`;
-      const res = await fetch(publicApiUrl, {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(4000),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.payment_code && String(json.payment_code).startsWith('000201')) {
-          return String(json.payment_code);
+    if (paymentLinkUrl.includes('sumopod.com')) {
+      let targetUrl = paymentLinkUrl;
+      try {
+        const r = await fetch(paymentLinkUrl, { redirect: 'follow', signal: AbortSignal.timeout(3000) });
+        if (r.ok && r.url) targetUrl = r.url;
+      } catch {}
+
+      if (targetUrl.includes('pymnt.app')) {
+        return extractQrisFromPaymentLink(targetUrl, paymentId);
+      }
+
+      if (paymentId) {
+        const hosts = [
+          'https://api-pay.sumopod.com',
+          'https://api-pay-sandbox.sumopod.com',
+        ];
+        for (const h of hosts) {
+          try {
+            const res = await fetch(`${h}/api/v1/public/payments/${encodeURIComponent(paymentId)}/checkout`, {
+              headers: { Accept: 'application/json' },
+              signal: AbortSignal.timeout(3000),
+            });
+            if (res.ok) {
+              const json = await res.json();
+              if (json.payment_code && String(json.payment_code).startsWith('000201')) {
+                return String(json.payment_code);
+              }
+            }
+          } catch {}
         }
       }
     }
@@ -224,8 +271,7 @@ export class SumopodPaymentGateway implements IPaymentGateway {
     try {
       // 1. If we have paymentUrl from checkout.pymnt.app
       if (paymentUrl && paymentUrl.includes('pymnt.app')) {
-        const segments = new URL(paymentUrl).pathname.split('/').filter(Boolean);
-        const checkoutId = segments[segments.length - 1];
+        const checkoutId = await resolvePymntCheckoutId(paymentUrl);
         if (checkoutId) {
           const res = await fetch(`https://checkout.pymnt.app/api/checkout/${checkoutId}`, {
             headers: { Accept: 'application/json' },
@@ -315,8 +361,7 @@ export class SumopodPaymentGateway implements IPaymentGateway {
     // 2. If paymentUrl is hosted on checkout.pymnt.app, notify upstream checkout
     if (paymentUrl && paymentUrl.includes('pymnt.app')) {
       try {
-        const segments = new URL(paymentUrl).pathname.split('/').filter(Boolean);
-        const checkoutId = segments[segments.length - 1];
+        const checkoutId = await resolvePymntCheckoutId(paymentUrl);
         if (checkoutId) {
           const pymntEndpoints = [
             `https://checkout.pymnt.app/api/checkout/${checkoutId}/cancel`,
