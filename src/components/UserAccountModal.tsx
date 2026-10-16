@@ -208,9 +208,12 @@ export const UserAccountModal: React.FC<UserAccountModalProps> = ({
     setIsGoogleLoading(true);
     setErrorMessage('');
     try {
+      const cleanCallback = typeof window !== 'undefined'
+        ? `${window.location.origin}${window.location.pathname}`
+        : '/';
       await authClient.signIn.social({
         provider: 'google',
-        callbackURL: typeof window !== 'undefined' ? window.location.href : '/',
+        callbackURL: cleanCallback,
       });
     } catch (err) {
       console.error('Google sign-in error:', err);

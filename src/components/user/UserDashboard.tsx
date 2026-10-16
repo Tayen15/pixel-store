@@ -108,9 +108,37 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [cancellingOrderNumber, setCancellingOrderNumber] = useState<string | null>(null);
   const [resumingOrderNumber, setResumingOrderNumber] = useState<string | null>(null);
 
-  // Load user data on client mount if initialUser was not passed
+  // Load user data on client mount if initialUser was not passed or if returning from OAuth redirect
   useEffect(() => {
-    if (!initialUser) {
+    const hasVerifier = typeof window !== 'undefined' && window.location.search.includes('neon_auth_session_verifier');
+
+    if (hasVerifier) {
+      setIsGoogleLoading(true);
+      // Explicitly trigger getSession to ensure client SDK finalizes the token exchange
+      authClient
+        .getSession()
+        .then(() => {
+          return actions.getCurrentUser();
+        })
+        .then(({ data }) => {
+          if (data?.user) {
+            setUser(data.user);
+            loadOrders();
+            // Clean up the URL verifier parameter
+            if (typeof window !== 'undefined') {
+              const cleanUrl = new URL(window.location.href);
+              cleanUrl.searchParams.delete('neon_auth_session_verifier');
+              window.history.replaceState({}, '', cleanUrl.pathname + (cleanUrl.search ? cleanUrl.search : ''));
+            }
+          }
+        })
+        .catch((err) => {
+          console.warn('OAuth verifier exchange error:', err);
+        })
+        .finally(() => {
+          setIsGoogleLoading(false);
+        });
+    } else if (!initialUser) {
       actions.getCurrentUser().then(({ data }) => {
         if (data?.user) {
           setUser(data.user);
@@ -118,7 +146,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         }
       });
     }
-  }, []);
+  }, [initialUser]);
 
   const loadOrders = async () => {
     setIsLoading(true);
@@ -206,9 +234,12 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
     setIsGoogleLoading(true);
     setAuthError('');
     try {
+      const cleanCallback = typeof window !== 'undefined' 
+        ? `${window.location.origin}/user` 
+        : '/user';
       await authClient.signIn.social({
         provider: 'google',
-        callbackURL: typeof window !== 'undefined' ? window.location.href : '/user',
+        callbackURL: cleanCallback,
       });
     } catch (err) {
       console.error('Google sign-in error:', err);
