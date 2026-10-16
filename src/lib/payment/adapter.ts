@@ -21,6 +21,8 @@ export interface InvoiceResult {
   giftId?: string;
   transactionId?: string;
   expiresAt: string;
+  amountIdr?: number;
+  feeIdr?: number;
 }
 
 export interface IPaymentGateway {
@@ -61,6 +63,8 @@ export class MockPaymentGateway implements IPaymentGateway {
       qrCodeString,
       qrCodeDataUrl,
       expiresAt,
+      amountIdr: input.amountIdr,
+      feeIdr: 0,
     };
   }
 
@@ -149,6 +153,8 @@ export class TripayPaymentGateway implements IPaymentGateway {
       qrCodeString: data.data.qr_string,
       qrCodeDataUrl,
       expiresAt: new Date(data.data.expired_time * 1000).toISOString(),
+      amountIdr: input.amountIdr,
+      feeIdr: 0,
     };
   }
 

@@ -590,6 +590,11 @@ export async function checkout(rawInput: {
     const orderId = crypto.randomUUID();
     const paymentId = crypto.randomUUID();
 
+    // Use charged amount from payment gateway if customer fee is enabled in PG
+    const finalAmountIdr = (typeof invoice.amountIdr === 'number' && invoice.amountIdr > 0)
+      ? invoice.amountIdr
+      : totalAmountIdr;
+
     // 5. Atomic database insertion
     await db.insert(schema.orders).values({
       id: orderId,
@@ -603,7 +608,7 @@ export async function checkout(rawInput: {
       basePriceUsdt: product.basePriceUsdt,
       exchangeRateIdr: dynamicPricing.usdtIdrRate,
       marginPercent: dynamicPricing.marginPercent,
-      totalAmountIdr: totalAmountIdr,
+      totalAmountIdr: finalAmountIdr,
       status: 'PENDING_PAYMENT',
       idempotencyKey,
     });
@@ -616,7 +621,7 @@ export async function checkout(rawInput: {
       paymentMethod: 'QRIS',
       qrCodeString: invoice.qrCodeString,
       paymentUrl: invoice.paymentUrl,
-      amountIdr: totalAmountIdr,
+      amountIdr: finalAmountIdr,
       status: 'UNPAID',
       expiresAt: invoice.expiresAt,
     });
@@ -651,7 +656,8 @@ export async function checkout(rawInput: {
         productName: product.name,
         quantity: input.quantity,
         unitPriceIdr: effectiveUnitPrice,
-        amountIdr: totalAmountIdr,
+        amountIdr: finalAmountIdr,
+        feeIdr: invoice.feeIdr || (finalAmountIdr - totalAmountIdr > 0 ? finalAmountIdr - totalAmountIdr : 0),
         qrCodeString: invoice.qrCodeString,
         paymentUrl: invoice.paymentUrl,
         qrCodeImageUrl: invoice.qrCodeImageUrl,

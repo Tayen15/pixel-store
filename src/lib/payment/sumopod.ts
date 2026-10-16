@@ -162,6 +162,14 @@ export class SumopodPaymentGateway implements IPaymentGateway {
 
     const data = (await res.json()) as SumopodCreatePaymentResponse;
 
+    // Synchronize charged amount if "Charge fee to customer" is active in SumoPod
+    const chargedAmount =
+      typeof data.amount === 'number' && data.amount > 0 ? data.amount : input.amountIdr;
+    const feeAmount =
+      typeof data.fee === 'number'
+        ? data.fee
+        : (chargedAmount - input.amountIdr > 0 ? chargedAmount - input.amountIdr : 0);
+
     // Resolve true EMVCo QRIS string (starts with 000201...)
     let resolvedQrisString: string | null = null;
 
@@ -176,7 +184,7 @@ export class SumopodPaymentGateway implements IPaymentGateway {
       if (data.payment_code && data.payment_code.startsWith('000201')) {
         resolvedQrisString = data.payment_code;
       } else {
-        resolvedQrisString = buildFallbackQrisString(input.orderNumber, input.amountIdr);
+        resolvedQrisString = buildFallbackQrisString(input.orderNumber, chargedAmount);
       }
     }
 
@@ -201,6 +209,8 @@ export class SumopodPaymentGateway implements IPaymentGateway {
       qrCodeDataUrl,
       paymentUrl: data.payment_link_url,
       expiresAt: data.expires_at || new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString(),
+      amountIdr: chargedAmount,
+      feeIdr: feeAmount,
     };
   }
 
