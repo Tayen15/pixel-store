@@ -713,7 +713,7 @@ export async function getOrderStatus(rawInput: { orderNumber: string }) {
     }
 
     if (order.status === 'PENDING_PAYMENT' && payment) {
-      if ((payment.gatewayProvider === 'sumopod' || payment.gatewayProvider === 'doit') && (payment.gatewayReference || payment.paymentUrl)) {
+      if (payment.gatewayProvider === 'sumopod' && (payment.gatewayReference || payment.paymentUrl)) {
         const gateway = getPaymentGateway();
         if ('checkPaymentStatus' in gateway) {
           try {

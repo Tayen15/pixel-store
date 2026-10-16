@@ -398,11 +398,11 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
               <span className="text-[11px] font-medium text-zinc-500">Header Verifikasi Signature:</span>
               <div className="pt-0.5">
                 <code className="font-mono text-xs text-zinc-900 dark:text-zinc-100">
-                  PayBridge-Signature: t=...,v1=...
+                  X-Webhook-Token / svix-signature
                 </code>
               </div>
               <p className="text-[10px] text-zinc-400">
-                Terverifikasi otomatis dengan HMAC-SHA256 (timing-safe).
+                Terverifikasi otomatis via Webhook Token atau Svix HMAC-SHA256.
               </p>
             </div>
           </div>
@@ -411,10 +411,10 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
             <ShieldCheck className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
             <div className="space-y-1 text-[11px] leading-relaxed">
               <p className="font-semibold text-blue-900 dark:text-blue-200">
-                Petunjuk Transisi & Simulasi Sandbox Doit.id:
+                Integrasi Resmi SumoPod Payment Gateway:
               </p>
               <p className="text-blue-800 dark:text-blue-300">
-                Untuk menguji pembayaran di mode sandbox, buka portal Doit.id &gt; menu Transaksi &gt; klik rincian pesanan &gt; klik <strong>Simulasikan lunas</strong>. Webhook <code className="font-mono">payment.paid</code> akan langsung membuka lisensi digital buyer secara otomatis.
+                Gateway aktif menggunakan SumoPod (api-pay.sumopod.com) dengan metode tagihan QRIS nasional (EMVCo). Notifikasi instan diterima via webhook <code className="font-mono">payment.completed</code> dan status pembatalan via <code className="font-mono">payment.failed</code>.
               </p>
             </div>
           </div>

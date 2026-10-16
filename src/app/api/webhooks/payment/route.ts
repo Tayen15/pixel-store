@@ -1,1 +1,1 @@
-export { POST } from '../doit/route';
+export { POST } from '../sumopod/route';

@@ -17,7 +17,7 @@ export interface FulfillmentResult {
  */
 export async function executeOrderFulfillment(
   orderId: string,
-  triggerSource: 'webhook_sumopod' | 'webhook_doit' | 'webhook_tako' | 'webhook_generic' | 'client_polling' | 'sandbox_simulation',
+  triggerSource: 'webhook_sumopod' | 'webhook_generic' | 'client_polling' | 'sandbox_simulation' | string,
   rawPayload?: string
 ): Promise<FulfillmentResult> {
   // 1. Fetch current order

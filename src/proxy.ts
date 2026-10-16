@@ -13,7 +13,6 @@ const PUBLIC_SKIP_ROUTES = [
   '/privacy',
   '/terms',
   '/reset-password',
-  '/doit/redirect',
   '/api',
   '/webhook',
 ];

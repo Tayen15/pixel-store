@@ -164,8 +164,6 @@ export class TripayPaymentGateway implements IPaymentGateway {
 import fs from 'node:fs';
 import path from 'node:path';
 import { SumopodPaymentGateway } from './sumopod';
-import { DoitPaymentGateway } from './doit';
-import { TakoPaymentGateway } from './tako';
 
 function getEnv(key: string): string {
   if (process.env[key]) return process.env[key]!;
@@ -192,7 +190,7 @@ function getEnv(key: string): string {
 
 /**
  * Factory to return the active payment gateway based on environment variables.
- * Prioritizes SumoPod Payment Gateway, then Doit.id, Tako, Tripay, or Mock.
+ * Exclusively uses SumoPod Payment Gateway.
  */
 export function getPaymentGateway(): IPaymentGateway {
   const sumopodApiKey = getEnv('SUMOPOD_API_KEY');
@@ -207,30 +205,6 @@ export function getPaymentGateway(): IPaymentGateway {
       sumopodSigningSecret,
       sumopodWebhookToken
     );
-  }
-
-  const doitApiKey = getEnv('DOIT_API_KEY');
-  const doitBaseUrl = getEnv('DOIT_BASE_URL') || 'https://pay.doit.id';
-  const doitSigningSecret = getEnv('DOIT_SIGNING_SECRET') || getEnv('DOIT_WEBHOOK_SECRET');
-
-  if (doitApiKey) {
-    return new DoitPaymentGateway(doitApiKey, doitBaseUrl, doitSigningSecret);
-  }
-
-  const takoApiKey = getEnv('TAKO_API_KEY');
-  const takoUsername = getEnv('TAKO_USERNAME');
-  const takoWebhookSecret = getEnv('TAKO_WEBHOOK_SECRET');
-
-  if (takoApiKey && takoUsername) {
-    return new TakoPaymentGateway(takoApiKey, takoUsername, takoWebhookSecret);
-  }
-
-  const tripayApiKey = getEnv('TRIPAY_API_KEY');
-  const tripayPrivateKey = getEnv('TRIPAY_PRIVATE_KEY');
-  const tripayMerchant = getEnv('TRIPAY_MERCHANT_CODE');
-
-  if (tripayApiKey && tripayPrivateKey && tripayMerchant) {
-    return new TripayPaymentGateway(tripayApiKey, tripayPrivateKey, tripayMerchant, process.env.NODE_ENV !== 'production');
   }
 
   return new MockPaymentGateway();
