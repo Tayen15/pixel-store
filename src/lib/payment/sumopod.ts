@@ -263,6 +263,103 @@ export class SumopodPaymentGateway implements IPaymentGateway {
   }
 
   /**
+   * Send cancel/failure notification to SumoPod PG so history payment changes from pending to canceled/failed
+   */
+  async cancelInvoice(
+    paymentIdOrReference: string,
+    reason = 'User cancelled payment',
+    paymentUrl?: string
+  ): Promise<boolean> {
+    let success = false;
+
+    // 1. Notify SumoPod backend directly (API endpoints)
+    try {
+      const endpoints = [
+        { url: `${this.baseUrl}/api/v1/payments/${encodeURIComponent(paymentIdOrReference)}/cancel`, method: 'POST', body: { event_type: 'payment.failed', status: 'cancelled', reason } },
+        { url: `${this.baseUrl}/api/v1/payments/${encodeURIComponent(paymentIdOrReference)}/fail`, method: 'POST', body: { event_type: 'payment.failed', status: 'failed', reason } },
+        { url: `${this.baseUrl}/api/v1/public/payments/${encodeURIComponent(paymentIdOrReference)}/simulate`, method: 'POST', body: { event_type: 'payment.failed', status: 'cancelled', reason } },
+      ];
+
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(ep.url, {
+            method: ep.method,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Api-Key': this.apiKey,
+            },
+            body: JSON.stringify(ep.body),
+            signal: AbortSignal.timeout(3000),
+          });
+          if (res.ok) {
+            console.log(`[SumoPod] Sent cancel notification to ${ep.url}: HTTP ${res.status}`);
+            success = true;
+            break;
+          }
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('[SumoPod] Gagal mengirim cancel invoice ke SumoPod:', (err as Error).message);
+    }
+
+    // 2. If paymentUrl is hosted on checkout.pymnt.app, notify upstream checkout
+    if (paymentUrl && paymentUrl.includes('pymnt.app')) {
+      try {
+        const segments = new URL(paymentUrl).pathname.split('/').filter(Boolean);
+        const checkoutId = segments[segments.length - 1];
+        if (checkoutId) {
+          const pymntEndpoints = [
+            `https://checkout.pymnt.app/api/checkout/${checkoutId}/cancel`,
+            `https://checkout.pymnt.app/api/checkout/${checkoutId}`,
+          ];
+          for (const u of pymntEndpoints) {
+            try {
+              const res = await fetch(u, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'cancel', status: 'CANCELLED', reason }),
+                signal: AbortSignal.timeout(3000),
+              });
+              if (res.ok) success = true;
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Dispatch internal webhook event payment.failed to ensure state consistency & logging
+    try {
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://pixelstore.oktaa.my.id').replace(/\/+$/, '');
+      const webhookPayload = {
+        event_type: 'payment.failed',
+        type: 'payment.failed',
+        data: {
+          payment_id: paymentIdOrReference,
+          status: 'failed',
+          reason: reason,
+          cancelled_at: new Date().toISOString(),
+        },
+      };
+
+      const webhookHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (this.webhookToken) {
+        webhookHeaders['X-Webhook-Token'] = this.webhookToken;
+      }
+
+      await fetch(`${appUrl}/api/webhooks/sumopod`, {
+        method: 'POST',
+        headers: webhookHeaders,
+        body: JSON.stringify(webhookPayload),
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+    } catch {}
+
+    return success;
+  }
+
+  /**
    * Verify SumoPod webhook request using either:
    * 1. X-Webhook-Token direct comparison (Simpler method)
    * 2. Svix HMAC-SHA256 signature verification (svix-id, svix-timestamp, svix-signature)

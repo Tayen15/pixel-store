@@ -145,19 +145,30 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Process payment expiration or failure
+    // Process payment expiration or failure/cancellation
+    const isCancelled =
+      eventType === 'payment.cancelled' ||
+      eventType === 'payment.canceled' ||
+      status === 'cancelled' ||
+      status === 'canceled' ||
+      String(data.reason || '').toLowerCase().includes('cancel');
+
     const isFailedOrExpired =
       eventType === 'payment.failed' ||
       eventType === 'payment.expired' ||
       status === 'failed' ||
-      status === 'expired';
+      status === 'expired' ||
+      isCancelled;
 
     if (isFailedOrExpired) {
+      const targetStatus = isCancelled ? 'CANCELED' : 'EXPIRED';
+      const reasonText = data.reason || (isCancelled ? 'Pembayaran dibatalkan pelanggan' : `Pembayaran gagal (${eventType || status})`);
+
       await db
         .update(schema.orders)
         .set({
-          status: 'EXPIRED',
-          failureReason: `Pembayaran kadaluarsa/gagal (${eventType || status})`,
+          status: targetStatus,
+          failureReason: reasonText,
           updatedAt: new Date().toISOString(),
         })
         .where(eq(schema.orders.id, orderRecord.id));
@@ -173,7 +184,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         orderNumber: orderRecord.orderNumber,
-        status: 'EXPIRED',
+        status: targetStatus,
       });
     }
 

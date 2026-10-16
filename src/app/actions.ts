@@ -828,6 +828,29 @@ export async function cancelOrder(rawInput: { orderNumber: string; reason?: stri
 
     const failureReason = reason?.trim() || 'Dibatalkan oleh pelanggan';
 
+    // 1. Fetch related payment record to notify Payment Gateway
+    const payments = await db
+      .select()
+      .from(schema.payments)
+      .where(eq(schema.payments.orderId, order.id));
+    const payment = payments[0];
+
+    // 2. Notify Payment Gateway so history status in PG changes to canceled/failed instead of pending
+    if (payment?.gatewayReference) {
+      try {
+        const gateway = getPaymentGateway();
+        if ('cancelInvoice' in gateway && typeof (gateway as any).cancelInvoice === 'function') {
+          await (gateway as any).cancelInvoice(
+            payment.gatewayReference,
+            failureReason,
+            payment.paymentUrl
+          );
+        }
+      } catch (gwErr) {
+        console.warn('[cancelOrder] Gagal kirim notifikasi cancel ke PG:', (gwErr as Error).message);
+      }
+    }
+
     await db
       .update(schema.orders)
       .set({

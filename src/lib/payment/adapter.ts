@@ -26,6 +26,8 @@ export interface InvoiceResult {
 export interface IPaymentGateway {
   createQRISInvoice(input: CreateInvoiceInput): Promise<InvoiceResult>;
   verifyWebhook(rawBody: string, signature: string, customSecretOrHeaders?: string | Record<string, string | null | undefined>): boolean;
+  checkPaymentStatus?(paymentIdOrReference: string, paymentUrl?: string): Promise<{ status: string } | null>;
+  cancelInvoice?(paymentIdOrReference: string, reason?: string, paymentUrl?: string): Promise<boolean>;
 }
 
 /**
