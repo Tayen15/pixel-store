@@ -2678,6 +2678,7 @@ export async function adminCreateManualOrder(rawInput: {
   customerEmail: string;
   customerWhatsapp?: string;
   status?: 'COMPLETED' | 'PENDING_PAYMENT';
+  generateQris?: boolean;
   licenseCodes?: string[];
   sendEmailNotification?: boolean;
   notes?: string;
@@ -2695,6 +2696,7 @@ export async function adminCreateManualOrder(rawInput: {
       customerEmail,
       customerWhatsapp,
       status,
+      generateQris,
       licenseCodes,
       sendEmailNotification,
       notes,
@@ -2706,6 +2708,7 @@ export async function adminCreateManualOrder(rawInput: {
       customerEmail: z.string().email('Format email pelanggan tidak valid'),
       customerWhatsapp: z.string().optional(),
       status: z.enum(['COMPLETED', 'PENDING_PAYMENT']).default('COMPLETED'),
+      generateQris: z.boolean().default(false),
       licenseCodes: z.array(z.string()).default([]),
       sendEmailNotification: z.boolean().default(true),
       notes: z.string().optional(),
@@ -2757,7 +2760,57 @@ export async function adminCreateManualOrder(rawInput: {
       .map((c) => c.trim())
       .filter((c) => c.length > 0);
 
-    // 4. Insert into orders table (NO supplier balance deduction, NO stock decrement)
+    // 4. Generate QRIS if requested by admin
+    let qrisInvoiceResult: any = null;
+    let qrCodeDataUrl: string | null = null;
+    let effectiveFinalAmountIdr = totalAmountIdr;
+
+    if (generateQris) {
+      if (totalAmountIdr < 1000) {
+        throw new Error('Nominal transaksi untuk pembuatan tagihan QRIS minimal Rp 1.000');
+      }
+
+      const paymentGateway = getPaymentGateway();
+      qrisInvoiceResult = await paymentGateway.createQRISInvoice({
+        orderNumber,
+        amountIdr: totalAmountIdr,
+        customerEmail: cleanEmail,
+        customerWhatsapp: customerWhatsapp?.trim() || '08123456789',
+        productName: `${productName.trim()} (x${quantity})`,
+        expiryMinutes: 60,
+      });
+
+      if (typeof qrisInvoiceResult.amountIdr === 'number' && qrisInvoiceResult.amountIdr > 0) {
+        effectiveFinalAmountIdr = qrisInvoiceResult.amountIdr;
+      }
+
+      qrCodeDataUrl = qrisInvoiceResult.qrCodeDataUrl || null;
+      if (!qrCodeDataUrl && qrisInvoiceResult.qrCodeImageUrl) {
+        try {
+          const imgRes = await fetch(qrisInvoiceResult.qrCodeImageUrl, { signal: AbortSignal.timeout(3500) });
+          if (imgRes.ok) {
+            const contentType = imgRes.headers.get('content-type') || 'image/png';
+            const buf = Buffer.from(await imgRes.arrayBuffer());
+            qrCodeDataUrl = `data:${contentType};base64,${buf.toString('base64')}`;
+          }
+        } catch {}
+      }
+
+      if (!qrCodeDataUrl && (qrisInvoiceResult.qrCodeString || qrisInvoiceResult.paymentUrl)) {
+        try {
+          qrCodeDataUrl = await QRCode.toDataURL(qrisInvoiceResult.qrCodeString || qrisInvoiceResult.paymentUrl, {
+            width: 320,
+            margin: 1,
+            errorCorrectionLevel: 'M',
+          });
+        } catch {}
+      }
+    }
+
+    const effectiveOrderStatus = generateQris ? 'PENDING_PAYMENT' : status;
+    const isCompletedNow = !generateQris && status === 'COMPLETED';
+
+    // 5. Insert into orders table (NO supplier balance deduction, NO stock decrement)
     const [newOrder] = await db.insert(schema.orders).values({
       id: orderId,
       orderNumber,
@@ -2770,46 +2823,48 @@ export async function adminCreateManualOrder(rawInput: {
       basePriceUsdt: matchedProduct.basePriceUsdt || 0,
       exchangeRateIdr: 17500,
       marginPercent: 0,
-      totalAmountIdr,
-      status,
+      totalAmountIdr: effectiveFinalAmountIdr,
+      status: effectiveOrderStatus,
       idempotencyKey,
-      supplierOrderId: 'MANUAL_TRANSACTION',
+      supplierOrderId: generateQris ? 'MANUAL_QRIS_ORDER' : 'MANUAL_TRANSACTION',
       licenseCodes: cleanCodes.length > 0 ? JSON.stringify(cleanCodes) : null,
       failureReason: notes ? `Transaksi Manual: ${notes.trim()}` : 'Dibuat secara manual oleh Admin',
-      paidAt: status === 'COMPLETED' ? nowIso : null,
-      fulfilledAt: status === 'COMPLETED' ? nowIso : null,
+      paidAt: isCompletedNow ? nowIso : null,
+      fulfilledAt: isCompletedNow ? nowIso : null,
       createdAt: nowIso,
       updatedAt: nowIso,
     }).returning();
 
-    // 5. Insert corresponding manual payment invoice
+    // 6. Insert corresponding payment invoice
     const paymentId = `pay_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
     await db.insert(schema.payments).values({
       id: paymentId,
       orderId: newOrder.id,
-      gatewayProvider: 'MANUAL',
-      gatewayReference: `MANUAL-${orderNumber}`,
-      paymentMethod: 'MANUAL_DIRECT',
-      amountIdr: totalAmountIdr,
-      status: status === 'COMPLETED' ? 'PAID' : 'UNPAID',
-      expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
-      paidAt: status === 'COMPLETED' ? nowIso : null,
+      gatewayProvider: generateQris ? (qrisInvoiceResult?.gatewayProvider || 'doit') : 'MANUAL',
+      gatewayReference: generateQris ? (qrisInvoiceResult?.gatewayReference || `MANUAL-${orderNumber}`) : `MANUAL-${orderNumber}`,
+      paymentMethod: generateQris ? 'QRIS' : 'MANUAL_DIRECT',
+      qrCodeString: generateQris ? (qrisInvoiceResult?.qrCodeString || null) : null,
+      paymentUrl: generateQris ? (qrisInvoiceResult?.paymentUrl || null) : null,
+      amountIdr: effectiveFinalAmountIdr,
+      status: isCompletedNow ? 'PAID' : 'UNPAID',
+      expiresAt: generateQris ? (qrisInvoiceResult?.expiresAt || new Date(Date.now() + 3600 * 1000).toISOString()) : new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+      paidAt: isCompletedNow ? nowIso : null,
       rawWebhookPayload: JSON.stringify({
-        mode: 'manual_admin_entry',
+        mode: generateQris ? 'manual_admin_qris_entry' : 'manual_admin_entry',
         notes: notes || null,
         createdAt: nowIso,
       }),
       createdAt: nowIso,
     });
 
-    // 6. Optional: Send fulfillment receipt email to customer
-    if (sendEmailNotification && status === 'COMPLETED' && cleanCodes.length > 0) {
+    // 7. Optional: Send fulfillment receipt email to customer if already completed
+    if (sendEmailNotification && isCompletedNow && cleanCodes.length > 0) {
       sendOrderFulfillmentEmail({
         customerEmail: cleanEmail,
         orderNumber,
         productName: productName.trim(),
         quantity,
-        totalIdr: totalAmountIdr,
+        totalIdr: effectiveFinalAmountIdr,
         licenseCodes: cleanCodes,
       }).catch((emailErr) => {
         console.warn('[Manual Order] Failed to send email receipt:', emailErr);
@@ -2821,7 +2876,17 @@ export async function adminCreateManualOrder(rawInput: {
       data: {
         success: true,
         order: newOrder,
-        message: `Transaksi manual ${orderNumber} berhasil dicatat!`,
+        qris: generateQris ? {
+          qrCodeString: qrisInvoiceResult?.qrCodeString || null,
+          paymentUrl: qrisInvoiceResult?.paymentUrl || null,
+          qrCodeDataUrl,
+          amountIdr: effectiveFinalAmountIdr,
+          expiresAt: qrisInvoiceResult?.expiresAt || '',
+          gatewayProvider: qrisInvoiceResult?.gatewayProvider || 'doit',
+        } : null,
+        message: generateQris
+          ? `Transaksi manual ${orderNumber} berhasil dibuat dengan tagihan QRIS!`
+          : `Transaksi manual ${orderNumber} berhasil dicatat!`,
       },
     };
   } catch (err) {
@@ -2831,3 +2896,75 @@ export async function adminCreateManualOrder(rawInput: {
 
 
 
+
+
+/**
+ * Retrieves payment and QRIS barcode details for an existing order in Admin Dashboard.
+ */
+export async function adminGetOrderPaymentDetails(rawInput: {
+  orderId: string;
+}) {
+  try {
+    if (!(await verifyAdminSessionToken())) {
+      return { success: false, error: { message: 'Akses ditolak: Admin belum login' } };
+    }
+
+    const { orderId } = z.object({
+      orderId: z.string().min(1),
+    }).parse(rawInput);
+
+    const orderRows = await db
+      .select()
+      .from(schema.orders)
+      .where(eq(schema.orders.id, orderId))
+      .limit(1);
+
+    if (orderRows.length === 0) {
+      return { success: false, error: { message: 'Data pesanan tidak ditemukan' } };
+    }
+    const order = orderRows[0];
+
+    const paymentRows = await db
+      .select()
+      .from(schema.payments)
+      .where(eq(schema.payments.orderId, orderId))
+      .limit(1);
+
+    const payment = paymentRows[0] || null;
+
+    let qrCodeDataUrl: string | null = null;
+    if (payment && (payment.qrCodeString || payment.paymentUrl)) {
+      try {
+        qrCodeDataUrl = await QRCode.toDataURL(payment.qrCodeString || payment.paymentUrl!, {
+          width: 320,
+          margin: 1,
+          errorCorrectionLevel: 'M',
+        });
+      } catch {}
+    }
+
+    return {
+      success: true,
+      data: {
+        paymentId: payment?.id || '',
+        orderNumber: order.orderNumber,
+        customerEmail: order.customerEmail,
+        customerWhatsapp: order.customerWhatsapp,
+        productName: order.productName,
+        totalAmountIdr: order.totalAmountIdr,
+        orderStatus: order.status,
+        gatewayProvider: payment?.gatewayProvider || 'MANUAL',
+        gatewayReference: payment?.gatewayReference || '',
+        paymentMethod: payment?.paymentMethod || 'MANUAL',
+        qrCodeString: payment?.qrCodeString || null,
+        paymentUrl: payment?.paymentUrl || null,
+        qrCodeDataUrl,
+        amountIdr: payment?.amountIdr || order.totalAmountIdr,
+        status: payment?.status || 'UNPAID',
+        expiresAt: payment?.expiresAt || '',
+      },
+    };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}

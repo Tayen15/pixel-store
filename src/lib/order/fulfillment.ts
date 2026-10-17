@@ -92,6 +92,45 @@ export async function executeOrderFulfillment(
 
   // 3. Fulfill from Wholesale Supplier (InsightXPro)
   try {
+    // Shield: If this is a manual order (PIXEL-MAN-...), DO NOT call InsightXPro wholesale supplier!
+    if (order.orderNumber.startsWith('PIXEL-MAN-')) {
+      let existingCodes: string[] = [];
+      try {
+        existingCodes = order.licenseCodes ? JSON.parse(order.licenseCodes) : [];
+      } catch {
+        existingCodes = order.licenseCodes ? [order.licenseCodes] : [];
+      }
+
+      await db
+        .update(schema.orders)
+        .set({
+          status: 'COMPLETED',
+          fulfilledAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.orders.id, order.id));
+
+      if (order.customerEmail && order.customerEmail.includes('@') && existingCodes.length > 0) {
+        sendOrderFulfillmentEmail({
+          orderNumber: order.orderNumber,
+          customerEmail: order.customerEmail,
+          productName: order.productName || 'Lisensi Digital',
+          quantity: order.quantity,
+          totalIdr: order.totalAmountIdr,
+          licenseCodes: existingCodes,
+        }).catch((emailErr) => {
+          console.warn(`[SMTP] Failed to send receipt for manual order ${order.orderNumber}:`, emailErr);
+        });
+      }
+
+      return {
+        success: true,
+        status: 'COMPLETED',
+        orderNumber: order.orderNumber,
+        licenseCodes: existingCodes,
+      };
+    }
+
     const productRecord = await db
       .select()
       .from(schema.productsCache)

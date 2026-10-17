@@ -17,9 +17,11 @@ import {
   RotateCcw,
   Mail,
   Plus,
+  QrCode,
 } from 'lucide-react';
 import { actions } from '@/actions';
 import { CreateManualOrderModal } from '../CreateManualOrderModal';
+import { ViewOrderQrisModal } from '../ViewOrderQrisModal';
 
 interface OrdersViewProps {
   orders: any[];
@@ -43,6 +45,7 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
   const [inspectOrder, setInspectOrder] = useState<any>(selectedOrderForModal || null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [isCreateManualOpen, setIsCreateManualOpen] = useState(false);
+  const [selectedOrderIdForQris, setSelectedOrderIdForQris] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
@@ -283,12 +286,24 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => setInspectOrder(o)}
-                          className="px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition cursor-pointer shadow-2xs"
-                        >
-                          Kelola
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {o.status === 'PENDING_PAYMENT' && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderIdForQris(o.id)}
+                              title="Buka Barcode & Link QRIS"
+                              className="p-1.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 transition cursor-pointer"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setInspectOrder(o)}
+                            className="px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition cursor-pointer shadow-2xs"
+                          >
+                            Kelola
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -356,6 +371,29 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
                 <div className="text-zinc-500">Jumlah: {inspectOrder.quantity} Akun/Lisensi</div>
               </div>
             </div>
+
+            {/* QRIS Quick Card if PENDING_PAYMENT */}
+            {inspectOrder.status === 'PENDING_PAYMENT' && (
+              <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5 text-xs">
+                    <QrCode className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>Tagihan QRIS Belum Dibayar</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                    Buka barcode QRIS untuk discan atau disalin tautannya ke pembeli
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderIdForQris(inspectOrder.id)}
+                  className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>Buka QRIS & Link</span>
+                </button>
+              </div>
+            )}
 
             {/* Financial Breakdown */}
             <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 space-y-2 text-xs">
@@ -448,6 +486,16 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
               </a>
 
               <div className="flex items-center gap-2">
+                {inspectOrder.status === 'PENDING_PAYMENT' && (
+                  <button
+                    onClick={() => setSelectedOrderIdForQris(inspectOrder.id)}
+                    className="px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-xs font-semibold text-amber-800 dark:text-amber-300 transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Lihat QRIS</span>
+                  </button>
+                )}
+
                 {inspectOrder.status === 'COMPLETED' && (
                   <button
                     onClick={() => handleResendEmail(inspectOrder.id)}
@@ -500,6 +548,13 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
         onClose={() => setIsCreateManualOpen(false)}
         products={products || []}
         onOrderCreated={onOrderUpdated}
+        showToast={showToast}
+      />
+
+      <ViewOrderQrisModal
+        isOpen={!!selectedOrderIdForQris}
+        onClose={() => setSelectedOrderIdForQris(null)}
+        orderId={selectedOrderIdForQris}
         showToast={showToast}
       />
     </div>
