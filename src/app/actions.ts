@@ -1035,7 +1035,7 @@ export async function simulatePayment(rawInput: { orderNumber: string }) {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Fitur simulasi pembayaran dinonaktifkan di lingkungan produksi.');
     }
 
@@ -1752,7 +1752,7 @@ export async function updatePricingSettings(rawInput: {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
 
@@ -1791,7 +1791,7 @@ export async function adminUpdateProductPrice(rawInput: {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
 
@@ -1843,7 +1843,7 @@ export async function syncCatalogNow() {
   try {
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
 
@@ -1863,7 +1863,7 @@ export async function adminToggleProductStatus(rawInput: { productId: number; is
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     await db
@@ -1885,7 +1885,7 @@ export async function adminToggleTopProduct(rawInput: { productId: number; isTop
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     await db
@@ -1906,7 +1906,7 @@ export async function adminRetryOrderFulfillment(rawInput: { orderId: string }) 
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     const order = await db
@@ -1999,7 +1999,7 @@ export async function adminMarkOrderRefunded(rawInput: { orderId: string; reason
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     await db
@@ -2024,7 +2024,7 @@ export async function adminCancelOrder(rawInput: { orderId: string; reason?: str
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     await db
@@ -2057,7 +2057,7 @@ export async function adminUpdateStoreSettings(rawInput: any) {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     await updateSystemSection('store', {
@@ -2092,7 +2092,7 @@ export async function adminTogglePaymentStatus(rawInput: {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     const currentStore = (await getSystemConfig(true)).store;
@@ -2115,7 +2115,7 @@ export async function adminUpdatePin(rawInput: { currentPin: string; newPin: str
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
     }
     if (!verifyAdminPin(currentPin)) {
@@ -2133,7 +2133,7 @@ export async function adminGetChatConversations(rawInput?: { status?: 'ALL' | 'O
     const status = rawInput?.status || 'ALL';
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2177,7 +2177,7 @@ export async function adminSearchUsersForChat(rawInput: { query: string }) {
     const { query } = z.object({ query: z.string().min(1) }).parse(rawInput);
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2207,7 +2207,7 @@ export async function adminOpenUserChat(rawInput: { userId: string }) {
     const { userId } = z.object({ userId: z.string().min(1) }).parse(rawInput);
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2281,7 +2281,7 @@ export async function adminGetChatMessages(rawInput: { conversationId: string })
     const { conversationId } = z.object({ conversationId: z.string().min(1) }).parse(rawInput);
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2336,7 +2336,7 @@ export async function adminSendChatMessage(rawInput: {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2397,7 +2397,7 @@ export async function adminUpdateChatStatus(rawInput: {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2435,7 +2435,7 @@ export async function adminDeleteChatConversation(rawInput: { conversationId: st
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2458,7 +2458,7 @@ export async function adminTestSmtpConnection(rawInput?: { testEmail?: string })
     const testEmail = rawInput?.testEmail;
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
@@ -2505,7 +2505,7 @@ export async function adminResendOrderEmail(rawInput: {
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (!verifyAdminSessionToken(sessionToken)) {
+    if (!(await verifyAdminSessionToken(sessionToken))) {
       throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
     }
 
