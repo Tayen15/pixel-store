@@ -16,11 +16,14 @@ import {
   Receipt,
   RotateCcw,
   Mail,
+  Plus,
 } from 'lucide-react';
 import { actions } from '@/actions';
+import { CreateManualOrderModal } from '../CreateManualOrderModal';
 
 interface OrdersViewProps {
   orders: any[];
+  products?: any[];
   onOrderUpdated: () => void;
   showToast: (type: 'success' | 'error', text: string) => void;
   selectedOrderForModal?: any;
@@ -29,6 +32,7 @@ interface OrdersViewProps {
 
 export const OrdersView: React.FC<OrdersViewProps> = ({
   orders,
+  products = [],
   onOrderUpdated,
   showToast,
   selectedOrderForModal,
@@ -38,6 +42,7 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'COMPLETED' | 'PENDING_PAYMENT' | 'CANCELED' | 'FAILED'>('ALL');
   const [inspectOrder, setInspectOrder] = useState<any>(selectedOrderForModal || null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [isCreateManualOpen, setIsCreateManualOpen] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isRefunding, setIsRefunding] = useState(false);
   const [isCanceling, setIsCanceling] = useState(false);
@@ -178,16 +183,27 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
           ))}
         </div>
 
-        {/* Search Bar */}
-        <div className="relative w-full sm:w-72">
-          <input
-            type="text"
-            placeholder="Cari order, email, WA, produk..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3.5 py-2 rounded-xl text-xs bg-white dark:bg-[#141416] border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition"
-          />
-          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
+        {/* Actions & Search Bar */}
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setIsCreateManualOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Transaksi Manual</span>
+          </button>
+
+          <div className="relative w-full sm:w-64">
+            <input
+              type="text"
+              placeholder="Cari order, email, WA, produk..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3.5 py-2 rounded-xl text-xs bg-white dark:bg-[#141416] border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-white transition"
+            />
+            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-2.5" />
+          </div>
         </div>
       </div>
 
@@ -478,6 +494,14 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
           </div>
         </div>
       )}
+
+      <CreateManualOrderModal
+        isOpen={isCreateManualOpen}
+        onClose={() => setIsCreateManualOpen(false)}
+        products={products || []}
+        onOrderCreated={onOrderUpdated}
+        showToast={showToast}
+      />
     </div>
   );
 };

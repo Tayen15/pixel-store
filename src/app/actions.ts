@@ -2666,4 +2666,168 @@ export async function adminSetTelegramWebhook(rawInput?: { webhookUrl?: string }
   }
 }
 
+// -------------------------------------------------------------
+// MANUAL TRANSACTION & PAYMENT CREATION (ZERO SUPPLIER DEDUCTION)
+// -------------------------------------------------------------
+
+export async function adminCreateManualOrder(rawInput: {
+  productId?: number;
+  productName: string;
+  quantity?: number;
+  totalAmountIdr: number;
+  customerEmail: string;
+  customerWhatsapp?: string;
+  status?: 'COMPLETED' | 'PENDING_PAYMENT';
+  licenseCodes?: string[];
+  sendEmailNotification?: boolean;
+  notes?: string;
+}) {
+  try {
+    if (!(await verifyAdminSessionToken())) {
+      throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
+    }
+
+    const {
+      productId,
+      productName,
+      quantity,
+      totalAmountIdr,
+      customerEmail,
+      customerWhatsapp,
+      status,
+      licenseCodes,
+      sendEmailNotification,
+      notes,
+    } = z.object({
+      productId: z.number().int().optional(),
+      productName: z.string().min(1, 'Nama produk wajib diisi'),
+      quantity: z.number().int().min(1).default(1),
+      totalAmountIdr: z.number().int().min(0, 'Total nominal tidak boleh negatif'),
+      customerEmail: z.string().email('Format email pelanggan tidak valid'),
+      customerWhatsapp: z.string().optional(),
+      status: z.enum(['COMPLETED', 'PENDING_PAYMENT']).default('COMPLETED'),
+      licenseCodes: z.array(z.string()).default([]),
+      sendEmailNotification: z.boolean().default(true),
+      notes: z.string().optional(),
+    }).parse(rawInput);
+
+    // 1. Resolve product record in database
+    let matchedProduct = null;
+    if (productId) {
+      matchedProduct = await db
+        .select()
+        .from(schema.productsCache)
+        .where(eq(schema.productsCache.id, productId))
+        .limit(1)
+        .then((rows) => rows[0]);
+    }
+
+    if (!matchedProduct) {
+      // Fallback to first available cached product to satisfy foreign key constraint
+      matchedProduct = await db
+        .select()
+        .from(schema.productsCache)
+        .limit(1)
+        .then((rows) => rows[0]);
+    }
+
+    if (!matchedProduct) {
+      throw new Error('Katalog produk di database masih kosong. Harap sinkronkan katalog terlebih dahulu.');
+    }
+
+    // 2. Resolve registered customer account if matching email exists
+    const cleanEmail = customerEmail.trim().toLowerCase();
+    const matchedUser = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.email, cleanEmail))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    // 3. Generate unique manual order number
+    const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomHex = crypto.randomBytes(3).toString('hex').toUpperCase();
+    const orderNumber = `PIXEL-MAN-${dateStr}-${randomHex}`;
+
+    const orderId = `order_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    const idempotencyKey = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+
+    const cleanCodes = licenseCodes
+      .map((c) => c.trim())
+      .filter((c) => c.length > 0);
+
+    // 4. Insert into orders table (NO supplier balance deduction, NO stock decrement)
+    const [newOrder] = await db.insert(schema.orders).values({
+      id: orderId,
+      orderNumber,
+      userId: matchedUser?.id || null,
+      customerEmail: cleanEmail,
+      customerWhatsapp: customerWhatsapp?.trim() || '-',
+      productId: matchedProduct.id,
+      productName: productName.trim(),
+      quantity,
+      basePriceUsdt: matchedProduct.basePriceUsdt || 0,
+      exchangeRateIdr: 17500,
+      marginPercent: 0,
+      totalAmountIdr,
+      status,
+      idempotencyKey,
+      supplierOrderId: 'MANUAL_TRANSACTION',
+      licenseCodes: cleanCodes.length > 0 ? JSON.stringify(cleanCodes) : null,
+      failureReason: notes ? `Transaksi Manual: ${notes.trim()}` : 'Dibuat secara manual oleh Admin',
+      paidAt: status === 'COMPLETED' ? nowIso : null,
+      fulfilledAt: status === 'COMPLETED' ? nowIso : null,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }).returning();
+
+    // 5. Insert corresponding manual payment invoice
+    const paymentId = `pay_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+    await db.insert(schema.payments).values({
+      id: paymentId,
+      orderId: newOrder.id,
+      gatewayProvider: 'MANUAL',
+      gatewayReference: `MANUAL-${orderNumber}`,
+      paymentMethod: 'MANUAL_DIRECT',
+      amountIdr: totalAmountIdr,
+      status: status === 'COMPLETED' ? 'PAID' : 'UNPAID',
+      expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+      paidAt: status === 'COMPLETED' ? nowIso : null,
+      rawWebhookPayload: JSON.stringify({
+        mode: 'manual_admin_entry',
+        notes: notes || null,
+        createdAt: nowIso,
+      }),
+      createdAt: nowIso,
+    });
+
+    // 6. Optional: Send fulfillment receipt email to customer
+    if (sendEmailNotification && status === 'COMPLETED' && cleanCodes.length > 0) {
+      sendOrderFulfillmentEmail({
+        customerEmail: cleanEmail,
+        orderNumber,
+        productName: productName.trim(),
+        quantity,
+        totalIdr: totalAmountIdr,
+        licenseCodes: cleanCodes,
+      }).catch((emailErr) => {
+        console.warn('[Manual Order] Failed to send email receipt:', emailErr);
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        success: true,
+        order: newOrder,
+        message: `Transaksi manual ${orderNumber} berhasil dicatat!`,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+
+
 

@@ -219,6 +219,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {activeTab === 'orders' && (
             <OrdersView
               orders={orders}
+              products={products}
               onOrderUpdated={reloadData}
               showToast={showToast}
               selectedOrderForModal={selectedOrderForModal}
