@@ -40,6 +40,12 @@ import {
   sendOrderFulfillmentEmail,
   sendPasswordResetEmail,
 } from '@/lib/email/mailer';
+import {
+  sendTelegramNotification,
+  sendTelegramMessage,
+  setTelegramWebhook,
+  getTelegramConfig,
+} from '@/lib/telegram/bot';
 
 function cleanName(raw: string): string {
   return raw.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
@@ -1371,6 +1377,17 @@ export async function sendBuyerChatMessage(rawInput: {
       });
     }
 
+    // Non-blocking instant Telegram push notification to administrator
+    sendTelegramNotification({
+      conversationId: conv.id,
+      buyerName: user.name,
+      buyerEmail: user.email,
+      orderNumber: conv.orderNumber || detectedOrderNum || null,
+      message: trimmedMsg,
+    }).catch((teleErr) => {
+      console.warn('[Telegram] Background notification dispatch error:', teleErr);
+    });
+
     return { success: true, data: { success: true, conversation: conv, message: newMsg } };
   } catch (err) {
     return { success: false, error: { message: (err as Error).message } };
@@ -2576,4 +2593,77 @@ export async function adminResendOrderEmail(rawInput: {
 export async function createCheckoutOrder(input: Parameters<typeof checkout>[0]) {
   return checkout(input);
 }
+
+// -------------------------------------------------------------
+// TELEGRAM CUSTOMER SERVICE BOT ADMIN ACTIONS
+// -------------------------------------------------------------
+
+export async function adminTestTelegramBot() {
+  try {
+    if (!(await verifyAdminSessionToken())) {
+      throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
+    }
+
+    const config = getTelegramConfig();
+    if (!config) {
+      throw new Error('Konfigurasi TELEGRAM_BOT_TOKEN atau TELEGRAM_ADMIN_CHAT_ID belum disetel di .env');
+    }
+
+    const testMsg = [
+      '🤖 *Uji Koneksi Bot Customer Service Pixel Store*',
+      '━━━━━━━━━━━━━━━━━━━━━',
+      'Koneksi bot Telegram ke server Pixel Store berhasil terhubung 100%!',
+      `Waktu Server: \`${new Date().toLocaleString('id-ID')}\``,
+      '',
+      'Setiap ada pesan baru dari pelanggan di `/support`, notifikasi akan otomatis dikirimkan ke chat ini.',
+    ].join('\n');
+
+    const success = await sendTelegramMessage(config.adminChatId, testMsg);
+    if (!success) {
+      throw new Error('Gagal mengirim pesan uji ke Telegram. Pastikan Anda telah menekan tombol "Start" (/start) di obrolan bot @pixelxassistant_bot.');
+    }
+
+    return {
+      success: true,
+      data: {
+        success: true,
+        message: 'Pesan uji berhasil dikirim ke akun Telegram Anda!',
+      },
+    };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+
+export async function adminSetTelegramWebhook(rawInput?: { webhookUrl?: string }) {
+  try {
+    if (!(await verifyAdminSessionToken())) {
+      throw new Error('Akses ditolak: Silakan masuk ke panel admin.');
+    }
+
+    const config = getTelegramConfig();
+    if (!config) {
+      throw new Error('Konfigurasi TELEGRAM_BOT_TOKEN belum disetel di .env');
+    }
+
+    const targetUrl = rawInput?.webhookUrl || `${process.env.APP_URL || 'https://pixelstore.oktaa.my.id'}/api/webhooks/telegram`;
+    const res = await setTelegramWebhook(targetUrl, config.webhookSecret);
+
+    if (!res.ok) {
+      throw new Error(`Telegram setWebhook gagal: ${res.description}`);
+    }
+
+    return {
+      success: true,
+      data: {
+        success: true,
+        url: targetUrl,
+        message: `Webhook Telegram berhasil didaftarkan ke: ${targetUrl}`,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+
 

@@ -19,6 +19,7 @@ import {
   Copy,
   ExternalLink,
   CreditCard,
+  Bot,
 } from 'lucide-react';
 import { actions } from '@/actions';
 
@@ -65,6 +66,11 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
   const [testEmailAddress, setTestEmailAddress] = useState('');
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Telegram CS Bot state
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [isSettingTelegramWebhook, setIsSettingTelegramWebhook] = useState(false);
 
   const handleQuickTogglePayment = async () => {
     setIsTogglingPayment(true);
@@ -625,6 +631,123 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
                 )}
                 <div className="leading-relaxed">{smtpTestResult.message}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Telegram Customer Service Bot Integration Card */}
+        <div className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#141416] space-y-4 shadow-xs">
+          <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
+                <Bot className="w-4 h-4 text-sky-500" />
+                <span>Telegram Bot CS (Live Support 2 Arah)</span>
+              </h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Menerima notifikasi chat web langsung di HP dan membalas via Telegram
+              </p>
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800">
+              Tersambung
+            </span>
+          </div>
+
+          <div className="space-y-2.5 text-xs">
+            <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200/80 dark:border-zinc-800/80 space-y-1.5">
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span>Bot Telegram:</span>
+                <a
+                  href="https://t.me/pixelxassistant_bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono font-semibold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1"
+                >
+                  <span>@pixelxassistant_bot</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span>Chat ID Admin (HP):</span>
+                <span className="font-mono font-medium text-zinc-900 dark:text-white">1116767059</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
+                <span>Webhook URL:</span>
+                <span className="font-mono text-zinc-500 truncate max-w-[200px]" title="https://pixelstore.oktaa.my.id/api/webhooks/telegram">
+                  /api/webhooks/telegram
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-1 space-y-2">
+              <button
+                type="button"
+                disabled={isTestingTelegram}
+                onClick={async () => {
+                  setIsTestingTelegram(true);
+                  setTelegramTestResult(null);
+                  try {
+                    const res = await actions.adminTestTelegramBot();
+                    if (res.error) {
+                      setTelegramTestResult({ success: false, message: res.error.message });
+                      showToast('error', res.error.message);
+                    } else if (res.data) {
+                      setTelegramTestResult({ success: true, message: res.data.message });
+                      showToast('success', res.data.message);
+                    }
+                  } catch (err) {
+                    const msg = (err as Error).message || 'Gagal tes bot Telegram';
+                    setTelegramTestResult({ success: false, message: msg });
+                    showToast('error', msg);
+                  } finally {
+                    setIsTestingTelegram(false);
+                  }
+                }}
+                className="w-full py-2.5 px-3 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isTestingTelegram ? 'Mengirim Uji Coba...' : 'Kirim Pesan Tes ke Telegram'}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isSettingTelegramWebhook}
+                onClick={async () => {
+                  setIsSettingTelegramWebhook(true);
+                  try {
+                    const res = await actions.adminSetTelegramWebhook();
+                    if (res.error) {
+                      showToast('error', res.error.message);
+                    } else if (res.data) {
+                      showToast('success', res.data.message);
+                    }
+                  } catch (err) {
+                    showToast('error', (err as Error).message || 'Gagal mendaftarkan webhook');
+                  } finally {
+                    setIsSettingTelegramWebhook(false);
+                  }
+                }}
+                className="w-full py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-sky-500" />
+                <span>{isSettingTelegramWebhook ? 'Mendaftarkan...' : 'Sinkronkan Webhook Telegram'}</span>
+              </button>
+            </div>
+
+            {telegramTestResult && (
+              <div
+                className={`p-3 rounded-xl border text-[11px] flex items-start gap-2 ${
+                  telegramTestResult.success
+                    ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
+                    : 'border-red-200 dark:border-red-900/60 bg-red-50/50 dark:bg-red-950/20 text-red-600 dark:text-red-400'
+                }`}
+              >
+                {telegramTestResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                )}
+                <div className="leading-relaxed">{telegramTestResult.message}</div>
               </div>
             )}
           </div>
