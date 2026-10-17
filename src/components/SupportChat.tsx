@@ -23,8 +23,19 @@ import {
   Mail,
   ArrowRight,
   Loader2,
+  X,
 } from 'lucide-react';
 import { authClient } from '@/lib/auth/client';
+import { ServiceLogo } from './ServiceLogo';
+
+export interface ProductSupportContext {
+  id: number;
+  name: string;
+  imageUrl?: string | null;
+  retailPriceIdr?: number;
+  category?: string | null;
+  source?: string | null;
+}
 
 const GoogleIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
   <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
@@ -69,13 +80,42 @@ interface SupportChatProps {
     email: string;
     image?: string | null;
   } | null;
+  initialProductContext?: ProductSupportContext | null;
+  initialOrderQuery?: string | null;
 }
 
-export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) => {
+const computeInitialDraft = (prodCtx?: ProductSupportContext | null, ordQ?: string | null) => {
+  if (ordQ) {
+    return `Halo Admin Pixel Store, saya butuh bantuan untuk pesanan ${ordQ}. Stok supplier kosong saat verifikasi pembayaran. Mohon bantuan aktivasi manual atau refund.`;
+  }
+  if (prodCtx) {
+    const isRestock = prodCtx.source === 'restock';
+    const idTag = prodCtx.id ? ` (ID: #${prodCtx.id})` : '';
+    if (isRestock) {
+      return `Halo Admin Pixel Store, saya ingin menanyakan jadwal restock / ketersediaan untuk produk ${prodCtx.name}${idTag}. Apakah kuota supplier bisa segera diisi kembali? Terima kasih.`;
+    }
+    return `Halo Admin Pixel Store, saya ingin menanyakan informasi mengenai produk ${prodCtx.name}${idTag}.`;
+  }
+  return '';
+};
+
+export const SupportChat: React.FC<SupportChatProps> = ({
+  initialUser = null,
+  initialProductContext = null,
+  initialOrderQuery = null,
+}) => {
   const [currentUser, setCurrentUser] = useState(initialUser);
+  const [productContext, setProductContext] = useState<ProductSupportContext | null>(
+    initialProductContext || null
+  );
+  const [orderQuery, setOrderQuery] = useState<string>(initialOrderQuery || '');
+  const [dismissContextCard, setDismissContextCard] = useState(false);
+
   const [conversationId, setConversationId] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState(() =>
+    computeInitialDraft(initialProductContext, initialOrderQuery)
+  );
   const [isInitializing, setIsInitializing] = useState(Boolean(initialUser));
   const [isSending, setIsSending] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -99,17 +139,38 @@ export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) 
     scrollToBottom();
   }, [messages]);
 
-  const [orderQuery, setOrderQuery] = useState<string>('');
-
   // Check customer session on client mount if not passed from server
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const orderParam = params.get('orderNumber') || params.get('order');
-      if (orderParam) {
+      const pName = params.get('productName');
+      const pId = params.get('productId');
+      const src = params.get('source');
+
+      let curOrd = orderQuery;
+      let curProd = productContext;
+
+      if (orderParam && !orderQuery) {
+        curOrd = orderParam;
         setOrderQuery(orderParam);
-        setInputText(`Halo Admin Pixel Store, saya butuh bantuan untuk pesanan ${orderParam}. Stok supplier kosong saat verifikasi pembayaran. Mohon bantuan aktivasi manual atau refund.`);
       }
+
+      if ((pName || pId) && !productContext) {
+        curProd = {
+          id: pId ? parseInt(pId, 10) : 0,
+          name: pName ? decodeURIComponent(pName) : `Produk #${pId}`,
+          source: src || 'restock',
+        };
+        setProductContext(curProd);
+      }
+
+      setInputText((prev) => {
+        if (!prev.trim()) {
+          return computeInitialDraft(curProd, curOrd);
+        }
+        return prev;
+      });
     }
 
     if (!initialUser) {
@@ -310,6 +371,18 @@ export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) 
   };
 
   const quickActions = [
+    ...(productContext
+      ? [
+          {
+            label: `📦 Tanya Restock ${productContext.name.length > 20 ? productContext.name.slice(0, 18) + '...' : productContext.name}`,
+            text: `Halo Admin, apakah kuota untuk ${productContext.name} bisa segera di-restock? Saya ingin order segera.`,
+          },
+          {
+            label: '⚡ Request Pengadaan Khusus',
+            text: `Halo Admin, saya ingin request pengadaan khusus akun ${productContext.name} untuk kebutuhan mendesak.`,
+          },
+        ]
+      : []),
     { label: '🔑 Cara Aktivasi Lisensi', text: 'Bagaimana cara melakukan aktivasi lisensi produk yang sudah saya beli?' },
     { label: '💳 Cek Status Pesanan', text: 'Saya ingin mengecek status pesanan saya: ' },
     { label: '🔄 Garansi & Refund', text: 'Bagaimana syarat dan ketentuan garansi refund jika ada kendala produk?' },
@@ -320,9 +393,32 @@ export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) 
   if (!currentUser) {
     return (
       <div className="w-full max-w-md mx-auto bg-white dark:bg-[#121215] rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xl overflow-hidden p-6 sm:p-8 space-y-5">
+        {productContext && (
+          <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/30 border border-amber-200/80 dark:border-amber-800/60 rounded-2xl flex items-center gap-3 text-left shadow-2xs">
+            <ServiceLogo
+              name={productContext.name}
+              imageUrl={productContext.imageUrl || undefined}
+              size="sm"
+              className="w-10 h-10 shrink-0"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-800 dark:text-amber-300">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                <span>Kebutuhan Restock Produk</span>
+              </div>
+              <h4 className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate mt-0.5">
+                {productContext.name}
+              </h4>
+              <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 mt-0.5">
+                Silakan masuk untuk mengajukan pengisian ulang stok langsung ke Tim Admin CS.
+              </p>
+            </div>
+          </div>
+        )}
+
         {orderQuery && (
-          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+          <div className="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 rounded-2xl flex items-center gap-2 text-xs text-blue-800 dark:text-blue-300">
+            <AlertCircle className="w-4 h-4 shrink-0 text-blue-600" />
             <div className="leading-tight">
               Bantuan untuk Pesanan: <strong className="font-mono">{orderQuery}</strong>
             </div>
@@ -549,6 +645,49 @@ export const SupportChat: React.FC<SupportChatProps> = ({ initialUser = null }) 
           </div>
         </div>
       </div>
+
+      {/* Product Context Banner (if redirected from catalog / restock) */}
+      {productContext && !dismissContextCard && (
+        <div className="px-5 py-3 bg-gradient-to-r from-amber-50/90 via-orange-50/70 to-amber-50/90 dark:from-amber-950/50 dark:via-orange-950/30 dark:to-amber-950/50 border-b border-amber-200/60 dark:border-amber-800/50 flex items-center justify-between gap-3 transition-all">
+          <div className="flex items-center gap-3 min-w-0">
+            <ServiceLogo
+              name={productContext.name}
+              imageUrl={productContext.imageUrl || undefined}
+              size="sm"
+              className="w-10 h-10 shrink-0 shadow-2xs"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 uppercase tracking-wider">
+                  {productContext.source === 'restock' ? 'Menunggu Restock Kuota' : 'Pertanyaan Produk'}
+                </span>
+                {productContext.retailPriceIdr ? (
+                  <span className="text-[11px] font-mono font-semibold text-zinc-700 dark:text-zinc-300">
+                    Rp {productContext.retailPriceIdr.toLocaleString('id-ID')}
+                  </span>
+                ) : null}
+              </div>
+              <h4 className="font-bold text-xs text-zinc-900 dark:text-zinc-100 truncate mt-0.5">
+                {productContext.name}
+              </h4>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-amber-800 dark:text-amber-300 hidden md:inline">
+              Pesan restock telah disiapkan di kolom bawah ↓
+            </span>
+            <button
+              type="button"
+              onClick={() => setDismissContextCard(true)}
+              className="p-1 rounded-lg hover:bg-amber-200/50 dark:hover:bg-amber-900/50 text-amber-800 dark:text-amber-400 transition cursor-pointer"
+              title="Tutup banner produk"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. Chat Stream */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-zinc-50/20 dark:bg-zinc-950/20">
