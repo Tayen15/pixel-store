@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { actions } from '@/actions';
 import { X, Search, CheckCircle2, AlertCircle, Copy, Loader2, PackageCheck, ExternalLink, XCircle, CreditCard, Clock } from 'lucide-react';
+import { clearPendingOrderStorage } from './CheckoutModal';
 
 interface OrderLookupModalProps {
   isOpen: boolean;
@@ -68,15 +69,7 @@ export const OrderLookupModal: React.FC<OrderLookupModalProps> = ({ isOpen, onCl
         alert(error.message || 'Gagal membatalkan pesanan.');
         return;
       }
-      try {
-        const savedRaw = localStorage.getItem('pixel_pending_order');
-        if (savedRaw) {
-          const saved = JSON.parse(savedRaw);
-          if (saved.orderNumber === orderResult.orderNumber) {
-            localStorage.removeItem('pixel_pending_order');
-          }
-        }
-      } catch {}
+      clearPendingOrderStorage(orderResult.orderNumber);
 
       setOrderResult((prev) => (prev ? { ...prev, status: 'CANCELED' } : null));
       alert(`Pesanan ${orderResult.orderNumber} berhasil dibatalkan.`);

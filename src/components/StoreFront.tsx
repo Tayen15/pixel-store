@@ -17,7 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { ServiceLogo } from "./ServiceLogo";
-import { CheckoutModal, type PendingOrderSession } from "./CheckoutModal";
+import { CheckoutModal, clearPendingOrderStorage, type PendingOrderSession } from "./CheckoutModal";
 import { OrderLookupModal } from "./OrderLookupModal";
 import {
   ProductDetailModal,
@@ -139,6 +139,17 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
       .catch(() => {});
   }, []);
 
+  // Listen to synchronized pending order storage purge events
+  useEffect(() => {
+    const handleStorageCleared = () => {
+      setRestoredPendingOrder(null);
+    };
+    window.addEventListener('pixel_pending_order_cleared', handleStorageCleared);
+    return () => {
+      window.removeEventListener('pixel_pending_order_cleared', handleStorageCleared);
+    };
+  }, []);
+
   // Check and restore active pending order upon accidental page refresh
   useEffect(() => {
     try {
@@ -146,14 +157,14 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
       if (!savedRaw) return;
       const saved = JSON.parse(savedRaw);
       if (!saved?.orderNumber || !saved?.expiresAt) {
-        localStorage.removeItem('pixel_pending_order');
+        clearPendingOrderStorage();
         return;
       }
 
       // Check if order has already expired
       const expiry = new Date(saved.expiresAt).getTime();
       if (!isNaN(expiry) && Date.now() >= expiry) {
-        localStorage.removeItem('pixel_pending_order');
+        clearPendingOrderStorage();
         return;
       }
 
@@ -177,7 +188,7 @@ export const StoreFront: React.FC<StoreFrontProps> = ({
           }
         } else {
           // If already completed, canceled, or expired, clear local storage
-          localStorage.removeItem('pixel_pending_order');
+          clearPendingOrderStorage();
         }
       }).catch(() => {});
     } catch (e) {

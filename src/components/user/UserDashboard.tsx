@@ -30,6 +30,7 @@ import {
 import { ServiceLogo } from '@/components/ServiceLogo';
 import { authClient } from '@/lib/auth/client';
 import { ResetPasswordCard } from '@/components/ResetPasswordCard';
+import { clearPendingOrderStorage } from '@/components/CheckoutModal';
 
 const GoogleIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
   <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
@@ -319,15 +320,7 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
         setGuestOrderResult((prev) => (prev ? { ...prev, status: 'CANCELED' } : null));
       }
 
-      try {
-        const savedRaw = localStorage.getItem('pixel_pending_order');
-        if (savedRaw) {
-          const saved = JSON.parse(savedRaw);
-          if (saved.orderNumber === orderNumber) {
-            localStorage.removeItem('pixel_pending_order');
-          }
-        }
-      } catch {}
+      clearPendingOrderStorage(orderNumber);
 
       alert(`Pesanan ${orderNumber} berhasil dibatalkan.`);
     } catch (err) {

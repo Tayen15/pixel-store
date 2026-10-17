@@ -58,6 +58,28 @@ export interface PendingOrderSession {
   expiresAt: string;
 }
 
+/**
+ * Synchronously removes pending order session from localStorage and broadcasts sync event
+ */
+export const clearPendingOrderStorage = (targetOrderNumber?: string) => {
+  try {
+    if (typeof window === 'undefined') return;
+    if (targetOrderNumber) {
+      const savedRaw = localStorage.getItem('pixel_pending_order');
+      if (savedRaw) {
+        const saved = JSON.parse(savedRaw);
+        if (saved?.orderNumber && saved.orderNumber !== targetOrderNumber) {
+          return;
+        }
+      }
+    }
+    localStorage.removeItem('pixel_pending_order');
+    window.dispatchEvent(new Event('pixel_pending_order_cleared'));
+  } catch (err) {
+    console.warn('Failed to clear pending order storage:', err);
+  }
+};
+
 interface CheckoutModalProps {
   product: ProductData | null;
   initialQuantity?: number;
@@ -191,9 +213,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          try {
-            localStorage.removeItem('pixel_pending_order');
-          } catch {}
+          clearPendingOrderStorage(orderData?.orderNumber);
           setStep('expired');
           return 0;
         }
@@ -202,54 +222,84 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [step]);
+  }, [step, orderData?.orderNumber]);
 
   // Polling for order completion, cancellation, and expiration when on QRIS step
+  // Features immediate trigger on document.visibilitychange / window.focus for 0ms return latency
   useEffect(() => {
     if (step !== 'qris' || !orderData) return;
 
-    const pollInterval = setInterval(async () => {
+    let isPollingActive = true;
+    let isChecking = false;
+
+    const checkOrderStatus = async () => {
+      if (!isPollingActive || isChecking) return;
+      isChecking = true;
       try {
         const { data, error } = await actions.getOrderStatus({
           orderNumber: orderData.orderNumber,
         });
 
+        if (!isPollingActive) return;
+
         if (!error && data) {
           if (data.status === 'COMPLETED' && data.licenseCodes.length > 0) {
-            try {
-              localStorage.removeItem('pixel_pending_order');
-            } catch {}
+            clearPendingOrderStorage(orderData.orderNumber);
             setLicenseCodes(data.licenseCodes);
             setStep('success');
-            clearInterval(pollInterval);
+            isPollingActive = false;
           } else if (data.status === 'CANCELED') {
-            try {
-              localStorage.removeItem('pixel_pending_order');
-            } catch {}
+            clearPendingOrderStorage(orderData.orderNumber);
             setStep('canceled');
-            clearInterval(pollInterval);
+            isPollingActive = false;
           } else if (data.status === 'EXPIRED') {
-            try {
-              localStorage.removeItem('pixel_pending_order');
-            } catch {}
+            clearPendingOrderStorage(orderData.orderNumber);
             setStep('expired');
-            clearInterval(pollInterval);
+            isPollingActive = false;
           } else if (data.status === 'FAILED_SUPPLIER') {
-            try {
-              localStorage.removeItem('pixel_pending_order');
-            } catch {}
+            clearPendingOrderStorage(orderData.orderNumber);
             setFailureReason(data.failureReason || 'Stok supplier wholesale kosong saat verifikasi pembayaran.');
             setStep('failed_supplier');
-            clearInterval(pollInterval);
+            isPollingActive = false;
           }
         }
       } catch (err) {
         console.error('Polling error:', err);
+      } finally {
+        isChecking = false;
       }
+    };
+
+    // Standard interval polling every 2500ms
+    const pollInterval = setInterval(() => {
+      checkOrderStatus();
     }, 2500);
 
-    return () => clearInterval(pollInterval);
+    // Immediate check when buyer switches back from m-Banking / e-wallet apps (BCA, GoPay, ShopeePay, DANA)
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' && isPollingActive) {
+        checkOrderStatus();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      isPollingActive = false;
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
   }, [step, orderData]);
+
+  // Safe close handler that purges pending storage on terminal steps
+  const handleCloseModal = () => {
+    if (['canceled', 'expired', 'success', 'failed_supplier'].includes(step)) {
+      clearPendingOrderStorage(orderData?.orderNumber);
+    }
+    onClose();
+  };
 
   if (!product) return null;
 
@@ -308,6 +358,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!orderData) return;
     if (!window.confirm('Apakah Anda yakin ingin membatalkan pesanan ini?')) return;
 
+    // Purge localStorage synchronously so accidental page refresh never restores a cancelled payment
+    clearPendingOrderStorage(orderData.orderNumber);
+
     setIsCancelling(true);
     try {
       const { data, error } = await actions.cancelOrder({
@@ -319,10 +372,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         alert(error.message || 'Gagal membatalkan pesanan.');
         return;
       }
-
-      try {
-        localStorage.removeItem('pixel_pending_order');
-      } catch {}
 
       setStep('canceled');
     } catch (err) {
@@ -478,7 +527,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleCloseModal}
             className="p-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -846,6 +895,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    clearPendingOrderStorage(orderData?.orderNumber);
                     setStep('form');
                     setOrderData(null);
                   }}
@@ -857,7 +907,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleCloseModal}
                   className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold rounded-xl text-xs transition cursor-pointer"
                 >
                   Tutup
@@ -889,6 +939,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    clearPendingOrderStorage(orderData?.orderNumber);
                     setStep('form');
                     setOrderData(null);
                   }}
@@ -900,7 +951,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleCloseModal}
                   className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold rounded-xl text-xs transition cursor-pointer"
                 >
                   Tutup
@@ -999,7 +1050,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleCloseModal}
                 className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 font-semibold rounded-xl text-xs transition cursor-pointer"
               >
                 Selesai
@@ -1054,7 +1105,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleCloseModal}
                   className="w-full py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold rounded-xl text-xs transition cursor-pointer"
                 >
                   Tutup
