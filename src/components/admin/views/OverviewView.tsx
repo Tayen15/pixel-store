@@ -52,11 +52,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
     0
   );
 
-  // Approximate Net Profit = Total Gross - (Wholesale Cost USDT * FX) - (Gross * Doit Fee %)
+  // Approximate Net Profit = Total Gross - (Wholesale Cost USDT * FX) - (Gross * Gateway MDR %)
   const totalNetProfitIdr = completedOrders.reduce((sum, o) => {
     const wholesaleIdr = (o.basePriceUsdt || 0) * (o.exchangeRateIdr || liveFx.rate);
-    const doitFeeIdr = (o.totalAmountIdr || 0) * ((gatewayFeePercent || 0.7) / 100);
-    const profit = (o.totalAmountIdr || 0) - wholesaleIdr - doitFeeIdr;
+    const gatewayFeeIdr = (o.totalAmountIdr || 0) * ((gatewayFeePercent || 0.7) / 100);
+    const profit = (o.totalAmountIdr || 0) - wholesaleIdr - gatewayFeeIdr;
     return sum + (profit > 0 ? profit : 0);
   }, 0);
 
@@ -81,7 +81,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             Rp {totalGrossRevenueIdr.toLocaleString('id-ID')}
           </div>
           <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            Akumulasi transaksi berhasil via QRIS Doit.id.
+            Akumulasi transaksi berhasil via QRIS SumoPod.
           </p>
         </div>
 
@@ -100,7 +100,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             Rp {Math.round(totalNetProfitIdr).toLocaleString('id-ID')}
           </div>
           <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            Setelah dipotong modal supplier & fee Doit ({gatewayFeePercent}%).
+            Setelah dipotong modal supplier & fee gateway ({gatewayFeePercent}%).
           </p>
         </div>
 

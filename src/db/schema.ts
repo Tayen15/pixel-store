@@ -99,7 +99,7 @@ export const orders = pgTable('orders', {
 export const payments = pgTable('payments', {
   id: text('id').primaryKey(), // UUID v4
   orderId: text('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
-  gatewayProvider: text('gateway_provider').notNull(), // 'tripay' | 'midtrans' | 'tako' | 'mock'
+  gatewayProvider: text('gateway_provider').notNull(), // 'sumopod' | 'manual' | 'mock'
   gatewayReference: text('gateway_reference').notNull(),
   paymentMethod: text('payment_method').default('QRIS'),
   qrCodeString: text('qr_code_string'),

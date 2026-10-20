@@ -42,10 +42,13 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
     config?.pricing?.marginPercent ?? 20
   );
   const [gatewayFeePercent, setGatewayFeePercent] = useState<number>(
-    config?.pricing?.gatewayFeePercent ?? 5.0
+    config?.pricing?.gatewayFeePercent ?? 0.7
+  );
+  const [supplierNetworkFeeUsdt, setSupplierNetworkFeeUsdt] = useState<number>(
+    config?.pricing?.supplierNetworkFeeUsdt ?? 0.1
   );
   const [fixedFee, setFixedFee] = useState<number>(
-    config?.pricing?.fixedFeeIdr ?? 0
+    config?.pricing?.fixedFeeIdr ?? 2500
   );
   const [simUsdt, setSimUsdt] = useState<number>(1.0);
   const [isSaving, setIsSaving] = useState(false);
@@ -56,11 +59,13 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
     currentFxRate * (1 + (Number(fxBufferPercent) || 0) / 100)
   );
   const simCostIdr = Math.round(simUsdt * effectiveFxRate);
+  const simNetworkFeeIdr = Math.round((Number(supplierNetworkFeeUsdt) || 0) * effectiveFxRate);
+  const simTotalWholesaleIdr = simCostIdr + simNetworkFeeIdr;
   const simMarginIdr = Math.round(
-    simCostIdr * ((Number(marginPercent) || 0) / 100)
+    simTotalWholesaleIdr * ((Number(marginPercent) || 0) / 100)
   );
   const simFixedIdr = Number(fixedFee) || 0;
-  const simSubtotalPreGateway = simCostIdr + simMarginIdr + simFixedIdr;
+  const simSubtotalPreGateway = simTotalWholesaleIdr + simMarginIdr + simFixedIdr;
   const simGatewayFeeIdr = Math.round(
     simSubtotalPreGateway * ((Number(gatewayFeePercent) || 0) / 100)
   );
@@ -77,6 +82,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
         fxBufferPercent: Number(fxBufferPercent),
         marginPercent: Number(marginPercent),
         gatewayFeePercent: Number(gatewayFeePercent),
+        supplierNetworkFeeUsdt: Number(supplierNetworkFeeUsdt),
         fixedFeeIdr: Number(fixedFee),
       });
 
@@ -150,11 +156,35 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
               </p>
             </div>
 
-            {/* Biaya Gateway & Penarikan Doit.id */}
+            {/* Biaya Network Transfer Supplier (USDT) */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <label className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  Alokasi Biaya Gateway Doit.id & Penarikan (%):
+                  Biaya Network Transfer Supplier (USDT):
+                </label>
+                <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-sm">
+                  ${supplierNetworkFeeUsdt} USDT
+                </span>
+              </div>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="5"
+                value={supplierNetworkFeeUsdt}
+                onChange={(e) => setSupplierNetworkFeeUsdt(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono"
+              />
+              <p className="text-[11px] text-zinc-400">
+                Biaya gas fee blockchain (TRC-20/BEP-20, default $0.1 USDT) saat Anda mengirim saldo ke supplier InsightXPro. Otomatis dikonversi ke IDR dan ditambahkan ke modal produk.
+              </p>
+            </div>
+
+            {/* Biaya Gateway QRIS SumoPod */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <label className="font-semibold text-zinc-800 dark:text-zinc-200">
+                  Alokasi Biaya Gateway QRIS (%):
                 </label>
                 <span className="font-mono font-bold text-blue-600 dark:text-blue-400 text-sm">
                   {gatewayFeePercent}%
@@ -165,14 +195,52 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
                 onChange={(e) => setGatewayFeePercent(Number(e.target.value))}
                 className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-medium focus:outline-none"
               >
-                <option value={0.7}>MDR QRIS Standar (0.7% - Biaya BI)</option>
-                <option value={1.5}>MDR + Buffer Operasional (1.5%)</option>
-                <option value={2.5}>MDR + Penarikan Reguler (2.5%)</option>
-                <option value={5.0}>Tier Proteksi Maksimal (5.0%)</option>
-                <option value={4.5}>Tier VIP (4.5%)</option>
+                <option value={0.7}>MDR QRIS Standar (0.7% - Biaya SumoPod / BI)</option>
+                <option value={1.0}>MDR + Buffer Operasional (1.0%)</option>
+                <option value={1.5}>MDR + Buffer Tinggi (1.5%)</option>
+                <option value={2.5}>Tier Proteksi Ekstra (2.5%)</option>
               </select>
               <p className="text-[11px] text-zinc-400">
-                Otomatis dihitung ke harga jual pembeli agar margin toko tidak terpotong saat menerima pembayaran atau menarik saldo Doit.id.
+                Biaya transaksi QRIS SumoPod yang otomatis dipotong per transaksi. Dibebankan ke harga jual pembeli agar laba bersih toko tidak terpotong.
+              </p>
+            </div>
+
+            {/* Biaya Penarikan Bank Toko (Withdrawal Fee IDR) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <label className="font-semibold text-zinc-800 dark:text-zinc-200">
+                  Biaya Penarikan Bank (Withdrawal Fee IDR):
+                </label>
+                <span className="font-mono font-bold text-zinc-900 dark:text-white text-sm">
+                  Rp {fixedFee.toLocaleString('id-ID')}
+                </span>
+              </div>
+              <input
+                type="number"
+                step="500"
+                min="0"
+                value={fixedFee}
+                onChange={(e) => setFixedFee(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setFixedFee(2500)}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
+                >
+                  Rp 2.500 (SumoPod Bank Withdraw)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFixedFee(0)}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
+                >
+                  Rp 0 (Bebas Biaya)
+                </button>
+              </div>
+              <p className="text-[11px] text-zinc-400">
+                Biaya 1x penarikan (withdraw) dari SumoPod ke rekening bank pemilik toko (Rp 2.500). Langsung dialokasikan ke harga jual agar margin laba toko 100% utuh saat dicairkan ke rekening.
               </p>
             </div>
 
@@ -197,29 +265,6 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
               />
               <p className="text-[11px] text-zinc-400">
                 Penyangga kurs untuk mengantisipasi selisih harga beli USDT saat store admin melakukan top-up dompet supplier.
-              </p>
-            </div>
-
-            {/* Fixed Operational Fee */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <label className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  Biaya Operasional Tetap (IDR):
-                </label>
-                <span className="font-mono font-bold text-zinc-900 dark:text-white text-sm">
-                  Rp {fixedFee.toLocaleString('id-ID')}
-                </span>
-              </div>
-              <input
-                type="number"
-                step="500"
-                min="0"
-                value={fixedFee}
-                onChange={(e) => setFixedFee(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono"
-              />
-              <p className="text-[11px] text-zinc-400">
-                Biaya flat tambahan opsional per transaksi (misal Rp 0 atau cadangan fee transfer bank Rp 5.000).
               </p>
             </div>
 
@@ -264,15 +309,24 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
           {/* Breakdown Card */}
           <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/40 space-y-2.5 text-xs">
             <div className="flex justify-between">
-              <span className="text-zinc-500">1. Modal Grosir Supplier:</span>
+              <span className="text-zinc-500">1. Modal Grosir Produk:</span>
               <span className="font-mono font-medium text-zinc-900 dark:text-white">
                 ${simUsdt.toFixed(2)} USDT &times; Rp {effectiveFxRate.toLocaleString('id-ID')} ={' '}
                 <strong className="font-bold">Rp {simCostIdr.toLocaleString('id-ID')}</strong>
               </span>
             </div>
 
+            {simNetworkFeeIdr > 0 && (
+              <div className="flex justify-between">
+                <span className="text-zinc-500">2. Fee Transfer Network Supplier:</span>
+                <span className="font-mono font-medium text-amber-600 dark:text-amber-400">
+                  +${(Number(supplierNetworkFeeUsdt) || 0).toFixed(2)} USDT (Rp {simNetworkFeeIdr.toLocaleString('id-ID')})
+                </span>
+              </div>
+            )}
+
             <div className="flex justify-between">
-              <span className="text-zinc-500">2. Laba Bersih Toko ({marginPercent}%):</span>
+              <span className="text-zinc-500">3. Target Margin Toko ({marginPercent}%):</span>
               <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">
                 +Rp {simMarginIdr.toLocaleString('id-ID')}
               </span>
@@ -280,7 +334,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
 
             {simFixedIdr > 0 && (
               <div className="flex justify-between">
-                <span className="text-zinc-500">3. Biaya Operasional Tetap:</span>
+                <span className="text-zinc-500">4. Alokasi Withdraw Bank (Flat):</span>
                 <span className="font-mono font-medium text-zinc-900 dark:text-white">
                   +Rp {simFixedIdr.toLocaleString('id-ID')}
                 </span>
@@ -295,14 +349,14 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
             </div>
 
             <div className="flex justify-between">
-              <span className="text-zinc-500">4. Alokasi Biaya Gateway Doit.id ({gatewayFeePercent}%):</span>
+              <span className="text-zinc-500">5. Alokasi MDR Gateway QRIS ({gatewayFeePercent}%):</span>
               <span className="font-mono font-medium text-blue-600 dark:text-blue-400">
                 +Rp {simGatewayFeeIdr.toLocaleString('id-ID')}
               </span>
             </div>
 
             <div className="flex justify-between text-zinc-500">
-              <span>Pembulatan Angka Cantik:</span>
+              <span>Pembulatan Cantik:</span>
               <span className="font-mono font-medium text-purple-600 dark:text-purple-400">
                 +Rp {simRoundingSurplus.toLocaleString('id-ID')}
               </span>
@@ -323,7 +377,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
                 Total Keuntungan Bersih Toko:
               </div>
               <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                100% aman masuk rekening tanpa nombok fee transfer Doit.id
+                100% aman masuk rekening tanpa nombok fee transfer & penarikan bank
               </div>
             </div>
             <div className="font-mono text-lg font-black text-emerald-600 dark:text-emerald-400">

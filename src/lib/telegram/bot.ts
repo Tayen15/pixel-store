@@ -123,6 +123,121 @@ export async function sendTelegramMessage(
 }
 
 /**
+ * Sends an instant purchase/order alert to administrator's Telegram
+ */
+export async function sendTelegramPurchaseNotification(payload: {
+  orderNumber: string;
+  productName: string;
+  quantity: number;
+  totalIdr: number;
+  customerEmail?: string | null;
+  customerWhatsapp?: string | null;
+  paymentMethod?: string | null;
+  licenseCodesCount?: number;
+  isManual?: boolean;
+}): Promise<boolean> {
+  const config = getTelegramConfig();
+  if (!config) {
+    console.warn('[Telegram] Skipping purchase notification: TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID not configured.');
+    return false;
+  }
+
+  const safeOrder = payload.orderNumber ? `\`${payload.orderNumber}\`` : '-';
+  const safeProduct = cleanText(payload.productName || 'Lisensi Digital');
+  const safeTotal = `Rp ${payload.totalIdr.toLocaleString('id-ID')}`;
+  const safeEmail = payload.customerEmail ? cleanText(payload.customerEmail) : '-';
+  const safeWa = payload.customerWhatsapp ? cleanText(payload.customerWhatsapp) : '-';
+  const safeMethod = cleanText(payload.paymentMethod || 'QRIS SumoPod');
+  const countText = payload.licenseCodesCount && payload.licenseCodesCount > 0
+    ? `${payload.licenseCodesCount} Kode Lisensi (Terkirim Otomatis ✅)`
+    : (payload.isManual ? 'Manual Entry' : 'Diproses Sistem');
+
+  const title = payload.isManual
+    ? '⚡ *TRANSAKSI MANUAL DIBUAT / LUNAS*'
+    : '💰 *PEMBELIAN BERHASIL (LUNAS!)*';
+
+  const text = [
+    title,
+    '━━━━━━━━━━━━━━━━━━━━━',
+    `📦 *Pesanan*: ${safeOrder}`,
+    `🛍️ *Produk*: ${safeProduct} (x${payload.quantity})`,
+    `💵 *Total Bayar*: *${safeTotal}*`,
+    `💳 *Metode*: ${safeMethod}`,
+    `📧 *Email*: ${safeEmail}`,
+    `📱 *WhatsApp*: ${safeWa}`,
+    `🔑 *Status Lisensi*: ${countText}`,
+    '',
+    `🕒 *Waktu*: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`,
+    '━━━━━━━━━━━━━━━━━━━━━',
+    '🎉 _Pixel Store Instant Notification System_',
+  ].join('\n');
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.adminChatId,
+        text,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      console.warn('[Telegram] Failed to send purchase notification:', data.description);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[Telegram] Error sending purchase notification:', err);
+    return false;
+  }
+}
+
+/**
+ * Sends an urgent alert when upstream supplier runs out of stock after payment is verified
+ */
+export async function sendTelegramSupplierAlert(payload: {
+  orderNumber: string;
+  productName: string;
+  errorMessage: string;
+  customerEmail?: string | null;
+}): Promise<boolean> {
+  const config = getTelegramConfig();
+  if (!config) return false;
+
+  const text = [
+    '🚨 *PERHATIAN: FULFILLMENT SUPPLIER GAGAL*',
+    '━━━━━━━━━━━━━━━━━━━━━',
+    `📦 *Pesanan*: \`${payload.orderNumber}\``,
+    `🛍️ *Produk*: ${cleanText(payload.productName)}`,
+    `📧 *Email*: ${cleanText(payload.customerEmail || '-')}`,
+    `⚠️ *Keterangan*: ${cleanText(payload.errorMessage)}`,
+    '',
+    '👉 Pembayaran sudah diverifikasi, namun stok supplier kosong/habis.',
+    'Silakan cek saldo InsightXPro atau lakukan top-up/refund manual.',
+  ].join('\n');
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${config.botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.adminChatId,
+        text,
+        parse_mode: 'Markdown',
+      }),
+    });
+    const data = await res.json();
+    return Boolean(data.ok);
+  } catch (err) {
+    console.error('[Telegram] Error sending supplier alert:', err);
+    return false;
+  }
+}
+
+/**
  * Register or update webhook URL with Telegram Bot API
  */
 export async function setTelegramWebhook(webhookUrl: string, secretToken?: string): Promise<{ ok: boolean; description?: string }> {

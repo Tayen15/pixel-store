@@ -119,6 +119,9 @@ export const SupportChat: React.FC<SupportChatProps> = ({
   const [isInitializing, setIsInitializing] = useState(Boolean(initialUser));
   const [isSending, setIsSending] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [isWaitingRestock, setIsWaitingRestock] = useState(
+    initialProductContext?.source === 'restock'
+  );
 
   // Auth Form State (when not logged in)
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -273,9 +276,17 @@ export const SupportChat: React.FC<SupportChatProps> = ({
           setConversationId(data.conversation.id);
         }
 
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? (data.message as ChatMessage) : m))
-        );
+        setMessages((prev) => {
+          const updated = prev.map((m) => (m.id === tempId ? (data.message as ChatMessage) : m));
+          if (data.autoReply) {
+            return [...updated, data.autoReply as ChatMessage];
+          }
+          return updated;
+        });
+
+        if (data.isRestockInquiry) {
+          setIsWaitingRestock(true);
+        }
 
         // Check if message has order number
         const orderMatch = text.match(/PIXEL-\d{8}-[A-Za-z0-9]+/i) || text.match(/PIXEL-[A-Za-z0-9-]+/i);
@@ -832,6 +843,29 @@ export const SupportChat: React.FC<SupportChatProps> = ({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Restock Attention Banner */}
+      {isWaitingRestock && (
+        <div className="px-4 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-t border-amber-200 dark:border-amber-900/60 flex items-center justify-between text-xs text-amber-800 dark:text-amber-300 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span>
+              <strong>Admin sedang mengecek kuota ke supplier.</strong> Mohon tunggu 1-3 menit dan jangan tinggalkan halaman ini agar langsung menerima balasan!
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsWaitingRestock(false)}
+            className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 text-xs px-1.5 py-0.5 rounded cursor-pointer shrink-0 ml-2"
+            title="Tutup pemberitahuan"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* 3. Quick Action Chips */}
       <div className="px-4 py-2 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/30 overflow-x-auto flex gap-2 no-scrollbar">

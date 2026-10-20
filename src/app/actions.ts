@@ -42,6 +42,7 @@ import {
 } from '@/lib/email/mailer';
 import {
   sendTelegramNotification,
+  sendTelegramPurchaseNotification,
   sendTelegramMessage,
   setTelegramWebhook,
   getTelegramConfig,
@@ -1377,18 +1378,61 @@ export async function sendBuyerChatMessage(rawInput: {
       });
     }
 
+    // Auto-reply for restock inquiries to keep buyers on page while admin checks stock
+    const isRestockInquiry = /restock|re-stock|stok|kuota|ready|habis|kosong|kapan ada/i.test(trimmedMsg);
+    let autoRestockReply: any = null;
+    if (isRestockInquiry) {
+      const restockMsgId = `msg_${Date.now() + 80}_${crypto.randomBytes(2).toString('hex')}`;
+      const restockText = `Halo kak ${user.name || ''}! 👋 Permintaan info restok produk ini sudah diteruskan langsung ke ponsel Admin.\n\n⏳ Mohon tunggu 1-3 menit di halaman ini ya kak, Admin sedang mengecek kuota ke supplier server dan akan segera membalas pesan Anda di sini. Jangan tinggalkan halaman ini agar langsung terhubung saat admin membalas! 🙏`;
+      const [insertedReply] = await db
+        .insert(schema.supportMessages)
+        .values({
+          id: restockMsgId,
+          conversationId: conv.id,
+          senderType: 'ADMIN',
+          senderName: 'Admin Pixel Store (Auto-Assist)',
+          message: restockText,
+          isRead: false,
+          createdAt: new Date(Date.now() + 80).toISOString(),
+        })
+        .returning();
+      autoRestockReply = insertedReply;
+
+      await db
+        .update(schema.supportConversations)
+        .set({
+          lastMessageText: restockText,
+          lastMessageSender: 'ADMIN',
+          unreadByBuyer: 1,
+        })
+        .where(eq(schema.supportConversations.id, conv.id));
+    }
+
     // Non-blocking instant Telegram push notification to administrator
+    const telegramMessage = isRestockInquiry
+      ? `🚨 *[PERMINTAAN RESTOCK - PEMBELI SEDANG MENUNGGU DI WEB]*\n${trimmedMsg}`
+      : trimmedMsg;
+
     sendTelegramNotification({
       conversationId: conv.id,
       buyerName: user.name,
       buyerEmail: user.email,
       orderNumber: conv.orderNumber || detectedOrderNum || null,
-      message: trimmedMsg,
+      message: telegramMessage,
     }).catch((teleErr) => {
       console.warn('[Telegram] Background notification dispatch error:', teleErr);
     });
 
-    return { success: true, data: { success: true, conversation: conv, message: newMsg } };
+    return {
+      success: true,
+      data: {
+        success: true,
+        conversation: conv,
+        message: newMsg,
+        autoReply: autoRestockReply,
+        isRestockInquiry,
+      },
+    };
   } catch (err) {
     return { success: false, error: { message: (err as Error).message } };
   }
@@ -1757,14 +1801,16 @@ export async function updatePricingSettings(rawInput: {
   fxBufferPercent?: number;
   marginPercent: number;
   gatewayFeePercent?: number;
+  supplierNetworkFeeUsdt?: number;
   fixedFeeIdr?: number;
 }) {
   try {
     const input = z.object({
       fxBufferPercent: z.number().min(0).max(10).default(0.5),
       marginPercent: z.number().min(0).max(100),
-      gatewayFeePercent: z.number().min(0).max(20).default(5.0),
-      fixedFeeIdr: z.number().int().min(0).max(50000).optional().default(0),
+      gatewayFeePercent: z.number().min(0).max(20).default(0.7),
+      supplierNetworkFeeUsdt: z.number().min(0).max(10).default(0.1),
+      fixedFeeIdr: z.number().int().min(0).max(50000).optional().default(2500),
     }).parse(rawInput);
 
     const cookieStore = await cookies();
@@ -2840,7 +2886,7 @@ export async function adminCreateManualOrder(rawInput: {
     await db.insert(schema.payments).values({
       id: paymentId,
       orderId: newOrder.id,
-      gatewayProvider: generateQris ? (qrisInvoiceResult?.gatewayProvider || 'doit') : 'MANUAL',
+      gatewayProvider: generateQris ? (qrisInvoiceResult?.gatewayProvider || 'sumopod') : 'MANUAL',
       gatewayReference: generateQris ? (qrisInvoiceResult?.gatewayReference || `MANUAL-${orderNumber}`) : `MANUAL-${orderNumber}`,
       paymentMethod: generateQris ? 'QRIS' : 'MANUAL_DIRECT',
       qrCodeString: generateQris ? (qrisInvoiceResult?.qrCodeString || null) : null,
@@ -2871,6 +2917,21 @@ export async function adminCreateManualOrder(rawInput: {
       });
     }
 
+    // 8. Instant Telegram notification to store admin
+    sendTelegramPurchaseNotification({
+      orderNumber,
+      productName: productName.trim(),
+      quantity,
+      totalIdr: effectiveFinalAmountIdr,
+      customerEmail: cleanEmail || null,
+      customerWhatsapp: customerWhatsapp?.trim() || null,
+      paymentMethod: generateQris ? 'SumoPod QRIS (Manual Tagihan)' : 'Manual Direct',
+      licenseCodesCount: cleanCodes.length,
+      isManual: true,
+    }).catch((teleErr) => {
+      console.warn('[Telegram] Manual order notification error:', teleErr);
+    });
+
     return {
       success: true,
       data: {
@@ -2882,7 +2943,7 @@ export async function adminCreateManualOrder(rawInput: {
           qrCodeDataUrl,
           amountIdr: effectiveFinalAmountIdr,
           expiresAt: qrisInvoiceResult?.expiresAt || '',
-          gatewayProvider: qrisInvoiceResult?.gatewayProvider || 'doit',
+          gatewayProvider: qrisInvoiceResult?.gatewayProvider || 'sumopod',
         } : null,
         message: generateQris
           ? `Transaksi manual ${orderNumber} berhasil dibuat dengan tagihan QRIS!`

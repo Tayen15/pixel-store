@@ -88,7 +88,7 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
       showToast(
         'success',
         targetState
-          ? 'Sistem pembayaran Doit.id berhasil DIAKTIFKAN!'
+          ? 'Sistem pembayaran SumoPod QRIS berhasil DIAKTIFKAN!'
           : 'Sistem pembayaran berhasil DINONAKTIFKAN (mode pemeliharaan aktif)!'
       );
       onConfigSaved();
@@ -325,13 +325,13 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
           </form>
         </div>
 
-        {/* Doit.id Payment Gateway Integration Card */}
+        {/* SumoPod Payment Gateway Integration Card */}
         <div className="lg:col-span-2 p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#141416] space-y-4 shadow-xs">
           <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-blue-500" />
-                <span>Gateway Pembayaran Doit.id (QRIS & Webhook)</span>
+                <span>Gateway Pembayaran SumoPod (QRIS & Webhook)</span>
               </h3>
               <p className="text-xs text-zinc-500">
                 Status operasional pembayaran QRIS, kontrol pemeliharaan darurat, & konfigurasi webhook

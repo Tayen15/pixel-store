@@ -414,7 +414,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         return;
       }
 
-      // 2. Direct QR image URL (e.g. Midtrans PNG via Tako)
+      // 2. Direct QR image URL
       if (orderData.qrCodeImageUrl) {
         if (isMounted) {
           setRenderedQrUrl(orderData.qrCodeImageUrl);

@@ -6,8 +6,9 @@ export interface PricingSettings {
   autoFxRate: boolean;
   fxBufferPercent: number;
   marginPercent: number;
-  gatewayFeePercent: number; // Persentase biaya gateway Doit.id & operasional (mis. MDR QRIS 0.7% atau custom buffer)
-  fixedFeeIdr: number;
+  gatewayFeePercent: number; // Persentase biaya transaksi QRIS SumoPod (MDR 0.7% atau custom buffer)
+  fixedFeeIdr: number; // Biaya penarikan bank (SumoPod withdrawal fee: Rp 2.500) & operasional flat
+  supplierNetworkFeeUsdt?: number; // Biaya gas fee/network transfer USDT ke supplier (misal $0.1 USDT)
   roundingStep: number;
 }
 
@@ -49,7 +50,8 @@ function getDefaultConfig(): SystemConfig {
       fxBufferPercent: 0.5,
       marginPercent: Number(process.env.PROFIT_MARGIN_PERCENT || 20),
       gatewayFeePercent: Number(process.env.GATEWAY_FEE_PERCENT || 0.7),
-      fixedFeeIdr: Number(process.env.FIXED_PAYMENT_FEE_IDR || 0),
+      fixedFeeIdr: Number(process.env.FIXED_PAYMENT_FEE_IDR || 2500),
+      supplierNetworkFeeUsdt: Number(process.env.SUPPLIER_NETWORK_FEE_USDT || 0.1),
       roundingStep: 1000,
     },
     store: {

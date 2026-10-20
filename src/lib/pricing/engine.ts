@@ -48,17 +48,21 @@ export interface RetailPriceResult {
   gatewayFeePercent: number;
   gatewayFeeIdr: number;
   operationalFeeIdr: number;
+  withdrawalFeeIdr?: number;
+  supplierNetworkFeeIdr?: number;
   wholesaleCostIdr: number;
   profitAmountIdr: number;
 }
 
 /**
  * Calculates final retail price in IDR from base USDT wholesale cost.
- * Refactored Business Formula (Doit.id Gateway-Aware):
- * - Wholesale Cost (IDR) = basePriceUsdt * exchangeRate
- * - Profit Margin (IDR)  = Wholesale Cost * (marginPercent / 100)
- * - Doit Gateway Fee (IDR) = (Wholesale Cost + Profit Margin) * (gatewayFeePercent / 100)
- * - Operational Fee (IDR) = Doit Gateway Fee + optional fixedFeeIdr
+ * Refactored Business Formula (SumoPod & Supplier Network Fee Aware):
+ * - Base Wholesale Cost (IDR) = basePriceUsdt * exchangeRate
+ * - Supplier Network Fee (IDR) = supplierNetworkFeeUsdt * exchangeRate
+ * - Total Wholesale Cost (IDR) = Base Wholesale + Supplier Network Fee
+ * - Profit Margin (IDR) = Total Wholesale Cost * (marginPercent / 100)
+ * - Withdrawal Fee (IDR) = fixedFeeIdr (e.g. Rp 2.500 per withdrawal)
+ * - QRIS Gateway Fee (IDR) = (Total Wholesale + Margin + Withdrawal Fee) * (gatewayFeePercent / 100)
  * - Final Unit Price (IDR) = Ceil(Subtotal / roundingStep) * roundingStep
  */
 export function calculateRetailPriceIdr(
@@ -69,23 +73,32 @@ export function calculateRetailPriceIdr(
   const rate = config?.usdtIdrRate ?? Number(process.env.USDT_IDR_RATE || 17800);
   const margin = config?.marginPercent ?? Number(process.env.PROFIT_MARGIN_PERCENT || 20);
   const gatewayFeePercent = config?.gatewayFeePercent ?? Number(process.env.GATEWAY_FEE_PERCENT || 0.7);
-  const fixedOperationalFee = config?.fixedFeeIdr ?? Number(process.env.FIXED_PAYMENT_FEE_IDR || 0);
+  // Default: Rp 2.500 (SumoPod withdrawal fee ke rekening bank pemilik toko)
+  const fixedOperationalFee = config?.fixedFeeIdr ?? Number(process.env.FIXED_PAYMENT_FEE_IDR || 2500);
+  // Default: 0.1 USDT (Biaya gas fee/network transfer saldo USDT ke supplier)
+  const networkFeeUsdt = config?.supplierNetworkFeeUsdt ?? Number(process.env.SUPPLIER_NETWORK_FEE_USDT || 0.1);
   const rounding = config?.roundingStep ?? 1000;
 
-  // 1. Modal Grosir Supplier (IDR)
-  const wholesaleCostIdr = Math.round(basePriceUsdt * rate);
+  // 1. Modal Grosir Produk Supplier (IDR)
+  const baseWholesaleIdr = Math.round(basePriceUsdt * rate);
 
-  // 2. Margin Keuntungan Bersih Toko (IDR)
+  // 2. Alokasi Biaya Network Transfer Crypto ke Supplier (IDR)
+  const supplierNetworkFeeIdr = Math.round(networkFeeUsdt * rate);
+
+  // Total Modal Grosir Riil (Produk + Biaya Transfer Jaringan)
+  const wholesaleCostIdr = baseWholesaleIdr + supplierNetworkFeeIdr;
+
+  // 3. Margin Keuntungan Bersih Toko (IDR)
   const profitAmountIdr = Math.round(wholesaleCostIdr * (margin / 100));
 
-  // 3. Subtotal sebelum potongan gateway Doit.id
+  // 4. Subtotal sebelum fee gateway QRIS
   const subtotalBeforeGateway = wholesaleCostIdr + profitAmountIdr + fixedOperationalFee;
 
-  // 4. Alokasi Biaya Gateway / Penarikan Doit.id
+  // 5. Alokasi Biaya Transaksi QRIS SumoPod (MDR)
   const gatewayFeeIdr = Math.round(subtotalBeforeGateway * (gatewayFeePercent / 100));
   const operationalFeeIdr = gatewayFeeIdr + fixedOperationalFee;
 
-  // 5. Total harga jual sebelum pembulatan kelipatan seribu
+  // 6. Total harga jual sebelum pembulatan kelipatan seribu
   const rawSubtotalIdr = wholesaleCostIdr + profitAmountIdr + operationalFeeIdr;
   
   const unitPriceIdr = Math.ceil(rawSubtotalIdr / rounding) * rounding;
@@ -99,6 +112,8 @@ export function calculateRetailPriceIdr(
     gatewayFeePercent,
     gatewayFeeIdr,
     operationalFeeIdr,
+    withdrawalFeeIdr: fixedOperationalFee,
+    supplierNetworkFeeIdr,
     wholesaleCostIdr,
     profitAmountIdr,
   };
