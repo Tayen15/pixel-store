@@ -1808,9 +1808,9 @@ export async function updatePricingSettings(rawInput: {
     const input = z.object({
       fxBufferPercent: z.number().min(0).max(10).default(0.5),
       marginPercent: z.number().min(0).max(100),
-      gatewayFeePercent: z.number().min(0).max(20).default(0.7),
-      supplierNetworkFeeUsdt: z.number().min(0).max(10).default(0.1),
-      fixedFeeIdr: z.number().int().min(0).max(50000).optional().default(2500),
+      gatewayFeePercent: z.number().min(0).max(20).default(0),
+      supplierNetworkFeeUsdt: z.number().min(0).max(10).default(0),
+      fixedFeeIdr: z.number().int().min(0).max(50000).optional().default(0),
     }).parse(rawInput);
 
     const cookieStore = await cookies();
@@ -1837,6 +1837,102 @@ export async function updatePricingSettings(rawInput: {
     }
 
     return { success: true, data: { success: true, updatedPricing: dynamicPricing } };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+
+/**
+ * Fetches all logged store operational expenses (gas fees, bank withdrawals, other costs)
+ */
+export async function adminGetExpenses() {
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
+    if (!(await verifyAdminSessionToken(sessionToken))) {
+      throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
+    }
+
+    const expensesList = await db
+      .select()
+      .from(schema.storeExpenses)
+      .orderBy(desc(schema.storeExpenses.expenseDate), desc(schema.storeExpenses.createdAt));
+
+    return { success: true, data: { expenses: expensesList } };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+
+/**
+ * Creates a new store operational expense record
+ */
+export async function adminCreateExpense(rawInput: {
+  expenseDate: string;
+  category: 'SUPPLIER_GAS_FEE' | 'BANK_WITHDRAWAL' | 'OPERATIONAL' | 'OTHER';
+  title: string;
+  amountIdr: number;
+  amountUsdt?: number | null;
+  notes?: string | null;
+}) {
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
+    if (!(await verifyAdminSessionToken(sessionToken))) {
+      throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
+    }
+
+    const input = z.object({
+      expenseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal harus YYYY-MM-DD'),
+      category: z.enum(['SUPPLIER_GAS_FEE', 'BANK_WITHDRAWAL', 'OPERATIONAL', 'OTHER']),
+      title: z.string().min(1, 'Judul pengeluaran wajib diisi').max(200),
+      amountIdr: z.number().int().min(0, 'Nominal IDR harus 0 atau lebih'),
+      amountUsdt: z.number().min(0).nullable().optional(),
+      notes: z.string().nullable().optional(),
+    }).parse(rawInput);
+
+    const expenseId = `exp_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const nowIso = new Date().toISOString();
+
+    const [newExpense] = await db
+      .insert(schema.storeExpenses)
+      .values({
+        id: expenseId,
+        expenseDate: input.expenseDate,
+        category: input.category,
+        title: input.title.trim(),
+        amountIdr: input.amountIdr,
+        amountUsdt: input.amountUsdt ?? null,
+        notes: input.notes?.trim() || null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .returning();
+
+    return { success: true, data: { expense: newExpense } };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+
+/**
+ * Deletes an existing store expense record
+ */
+export async function adminDeleteExpense(rawInput: { id: string }) {
+  try {
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
+    if (!(await verifyAdminSessionToken(sessionToken))) {
+      throw new Error('Akses ditolak: Silakan masuk ke panel admin terlebih dahulu.');
+    }
+
+    const { id } = z.object({
+      id: z.string().min(1),
+    }).parse(rawInput);
+
+    await db.delete(schema.storeExpenses).where(eq(schema.storeExpenses.id, id));
+
+    return { success: true, data: { success: true, id } };
   } catch (err) {
     return { success: false, error: { message: (err as Error).message } };
   }

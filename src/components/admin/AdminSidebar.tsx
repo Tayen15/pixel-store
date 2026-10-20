@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ChevronRight,
   MessageSquare,
+  CalendarDays,
 } from 'lucide-react';
 
 export type AdminTab =
@@ -22,6 +23,7 @@ export type AdminTab =
   | 'chats'
   | 'users'
   | 'pricing'
+  | 'expenses'
   | 'settings';
 
 interface AdminSidebarProps {
@@ -90,6 +92,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       icon: Percent,
       badge: 'Auto',
       badgeColor: 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300',
+    },
+    {
+      id: 'expenses' as AdminTab,
+      label: 'Buku Kas & Biaya',
+      icon: CalendarDays,
+      badge: 'P&L',
+      badgeColor: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
     },
     {
       id: 'settings' as AdminTab,

@@ -11,6 +11,7 @@ import { UsersView } from './admin/views/UsersView';
 import { PricingEngineView } from './admin/views/PricingEngineView';
 import { StoreSettingsView } from './admin/views/StoreSettingsView';
 import { SupportChatView } from './admin/views/SupportChatView';
+import { ExpensesView } from './admin/views/ExpensesView';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -264,6 +265,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               showToast={showToast}
               onRefreshFx={handleRefreshFx}
               isRefreshingFx={isRefreshingFx}
+            />
+          )}
+
+          {activeTab === 'expenses' && (
+            <ExpensesView
+              orders={orders}
+              liveFx={liveFx}
+              showToast={showToast}
             />
           )}
 

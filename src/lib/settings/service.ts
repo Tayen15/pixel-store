@@ -49,9 +49,9 @@ function getDefaultConfig(): SystemConfig {
       autoFxRate: true,
       fxBufferPercent: 0.5,
       marginPercent: Number(process.env.PROFIT_MARGIN_PERCENT || 20),
-      gatewayFeePercent: Number(process.env.GATEWAY_FEE_PERCENT || 0.7),
-      fixedFeeIdr: Number(process.env.FIXED_PAYMENT_FEE_IDR || 2500),
-      supplierNetworkFeeUsdt: Number(process.env.SUPPLIER_NETWORK_FEE_USDT || 0.1),
+      gatewayFeePercent: Number(process.env.GATEWAY_FEE_PERCENT || 0),
+      fixedFeeIdr: Number(process.env.FIXED_PAYMENT_FEE_IDR || 0),
+      supplierNetworkFeeUsdt: Number(process.env.SUPPLIER_NETWORK_FEE_USDT || 0),
       roundingStep: 1000,
     },
     store: {

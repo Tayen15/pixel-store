@@ -303,6 +303,25 @@ export async function ensureDatabaseTables(): Promise<void> {
         console.warn('support_messages table init notice:', (err as Error).message);
       }
 
+      // 9. Store Expenses Ledger (Gas fees, bank withdrawals, operational costs)
+      try {
+        await sqlClient`
+          CREATE TABLE IF NOT EXISTS store_expenses (
+            id TEXT PRIMARY KEY,
+            expense_date TEXT NOT NULL,
+            category VARCHAR(50) NOT NULL,
+            title TEXT NOT NULL,
+            amount_idr INTEGER NOT NULL,
+            amount_usdt DOUBLE PRECISION,
+            notes TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+        `;
+      } catch (err) {
+        console.warn('store_expenses table init notice:', (err as Error).message);
+      }
+
       try {
         await sqlClient`ALTER TABLE support_conversations ADD COLUMN IF NOT EXISTS user_id TEXT REFERENCES users(id) ON DELETE SET NULL;`;
       } catch {}
@@ -320,6 +339,8 @@ export async function ensureDatabaseTables(): Promise<void> {
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_support_conv_user ON support_conversations(user_id);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_support_conv_status ON support_conversations(status);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_support_messages_conv ON support_messages(conversation_id);`; } catch {}
+      try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_store_expenses_date ON store_expenses(expense_date);`; } catch {}
+      try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_store_expenses_cat ON store_expenses(category);`; } catch {}
 
       // Verify the connection for real. The individual statements above swallow
       // their errors, so reaching this line does NOT mean the database is

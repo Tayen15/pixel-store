@@ -26,7 +26,7 @@ export default async function AdminTabPage({ params }: AdminTabPageProps) {
   triggerBackgroundCatalogSyncIfNeeded();
 
   const { tab } = await params;
-  const validTabs = ['overview', 'orders', 'catalog', 'chats', 'users', 'pricing', 'settings'];
+  const validTabs = ['overview', 'orders', 'catalog', 'chats', 'users', 'pricing', 'expenses', 'settings'];
   if (!tab || !validTabs.includes(tab)) {
     redirect('/admin');
   }

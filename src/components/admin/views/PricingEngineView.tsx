@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import {
-  Zap,
   TrendingUp,
   Percent,
   Sliders,
@@ -12,9 +11,10 @@ import {
   Coins,
   ShieldCheck,
   CheckCircle2,
+  CalendarDays,
+  ArrowRight,
 } from 'lucide-react';
 import { actions } from '@/actions';
-import { ServiceLogo } from '../../ServiceLogo';
 
 interface PricingEngineViewProps {
   config: any;
@@ -41,35 +41,19 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
   const [marginPercent, setMarginPercent] = useState<number>(
     config?.pricing?.marginPercent ?? 20
   );
-  const [gatewayFeePercent, setGatewayFeePercent] = useState<number>(
-    config?.pricing?.gatewayFeePercent ?? 0.7
-  );
-  const [supplierNetworkFeeUsdt, setSupplierNetworkFeeUsdt] = useState<number>(
-    config?.pricing?.supplierNetworkFeeUsdt ?? 0.1
-  );
-  const [fixedFee, setFixedFee] = useState<number>(
-    config?.pricing?.fixedFeeIdr ?? 2500
-  );
   const [simUsdt, setSimUsdt] = useState<number>(1.0);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Live Simulator Calculations
+  // Live Simulator Calculations (Clean Competitive Pricing)
   const currentFxRate = liveFx?.rate ?? 17879;
   const effectiveFxRate = Math.round(
     currentFxRate * (1 + (Number(fxBufferPercent) || 0) / 100)
   );
   const simCostIdr = Math.round(simUsdt * effectiveFxRate);
-  const simNetworkFeeIdr = Math.round((Number(supplierNetworkFeeUsdt) || 0) * effectiveFxRate);
-  const simTotalWholesaleIdr = simCostIdr + simNetworkFeeIdr;
   const simMarginIdr = Math.round(
-    simTotalWholesaleIdr * ((Number(marginPercent) || 0) / 100)
+    simCostIdr * ((Number(marginPercent) || 0) / 100)
   );
-  const simFixedIdr = Number(fixedFee) || 0;
-  const simSubtotalPreGateway = simTotalWholesaleIdr + simMarginIdr + simFixedIdr;
-  const simGatewayFeeIdr = Math.round(
-    simSubtotalPreGateway * ((Number(gatewayFeePercent) || 0) / 100)
-  );
-  const simRawRetail = simSubtotalPreGateway + simGatewayFeeIdr;
+  const simRawRetail = simCostIdr + simMarginIdr;
   const simRetailPrice = Math.ceil(simRawRetail / 1000) * 1000;
   const simRoundingSurplus = simRetailPrice - simRawRetail;
   const simNetProfit = simMarginIdr + simRoundingSurplus;
@@ -81,9 +65,9 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
       const { data, error } = await actions.updatePricingSettings({
         fxBufferPercent: Number(fxBufferPercent),
         marginPercent: Number(marginPercent),
-        gatewayFeePercent: Number(gatewayFeePercent),
-        supplierNetworkFeeUsdt: Number(supplierNetworkFeeUsdt),
-        fixedFeeIdr: Number(fixedFee),
+        gatewayFeePercent: 0,
+        supplierNetworkFeeUsdt: 0,
+        fixedFeeIdr: 0,
       });
 
       if (error || !data) {
@@ -93,7 +77,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
 
       showToast(
         'success',
-        'Pengaturan harga disimpan! Seluruh 39 katalog toko telah diperbarui.'
+        'Parameter margin disimpan! Seluruh 39 katalog toko telah diperbarui dengan harga kompetitif.'
       );
       onConfigSaved();
     } catch (err) {
@@ -105,6 +89,23 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Separation Banner */}
+      <div className="p-4 rounded-2xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/20 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 shrink-0 mt-0.5">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="font-bold text-blue-900 dark:text-blue-200">
+              Pemisahan Parameter Margin & Biaya Operasional Toko
+            </h4>
+            <p className="text-[11px] text-blue-700 dark:text-blue-300/80 mt-0.5 leading-relaxed">
+              Biaya operasional sesekali (gas fee crypto saat top-up supplier $1/$5 dan biaya penarikan bank SumoPod Rp 2.500) dikelola terpisah di menu <strong>Buku Kas & Biaya</strong>. Harga jual ke pembeli tidak dibebani biaya per transaksi sehingga tetap murah dan kompetitif.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Main Grid: Form Controls & Live Simulator */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Configuration Form */}
@@ -113,10 +114,10 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
             <div>
               <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-emerald-500" />
-                <span>Parameter Margin & Biaya</span>
+                <span>Parameter Margin Produk</span>
               </h3>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Konfigurasi margin profit dan alokasi biaya operasional
+                Target keuntungan bersih toko dan proteksi fluktuasi kurs
               </p>
             </div>
             <button
@@ -152,95 +153,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
                 className="w-full accent-emerald-500 cursor-pointer"
               />
               <p className="text-[11px] text-zinc-400">
-                Persentase keuntungan bersih murni yang masuk ke kantong toko setelah semua biaya tertutupi.
-              </p>
-            </div>
-
-            {/* Biaya Network Transfer Supplier (USDT) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <label className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  Biaya Network Transfer Supplier (USDT):
-                </label>
-                <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-sm">
-                  ${supplierNetworkFeeUsdt} USDT
-                </span>
-              </div>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="5"
-                value={supplierNetworkFeeUsdt}
-                onChange={(e) => setSupplierNetworkFeeUsdt(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono"
-              />
-              <p className="text-[11px] text-zinc-400">
-                Biaya gas fee blockchain (TRC-20/BEP-20, default $0.1 USDT) saat Anda mengirim saldo ke supplier InsightXPro. Otomatis dikonversi ke IDR dan ditambahkan ke modal produk.
-              </p>
-            </div>
-
-            {/* Biaya Gateway QRIS SumoPod */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <label className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  Alokasi Biaya Gateway QRIS (%):
-                </label>
-                <span className="font-mono font-bold text-blue-600 dark:text-blue-400 text-sm">
-                  {gatewayFeePercent}%
-                </span>
-              </div>
-              <select
-                value={gatewayFeePercent}
-                onChange={(e) => setGatewayFeePercent(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-medium focus:outline-none"
-              >
-                <option value={0.7}>MDR QRIS Standar (0.7% - Biaya SumoPod / BI)</option>
-                <option value={1.0}>MDR + Buffer Operasional (1.0%)</option>
-                <option value={1.5}>MDR + Buffer Tinggi (1.5%)</option>
-                <option value={2.5}>Tier Proteksi Ekstra (2.5%)</option>
-              </select>
-              <p className="text-[11px] text-zinc-400">
-                Biaya transaksi QRIS SumoPod yang otomatis dipotong per transaksi. Dibebankan ke harga jual pembeli agar laba bersih toko tidak terpotong.
-              </p>
-            </div>
-
-            {/* Biaya Penarikan Bank Toko (Withdrawal Fee IDR) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
-                <label className="font-semibold text-zinc-800 dark:text-zinc-200">
-                  Biaya Penarikan Bank (Withdrawal Fee IDR):
-                </label>
-                <span className="font-mono font-bold text-zinc-900 dark:text-white text-sm">
-                  Rp {fixedFee.toLocaleString('id-ID')}
-                </span>
-              </div>
-              <input
-                type="number"
-                step="500"
-                min="0"
-                value={fixedFee}
-                onChange={(e) => setFixedFee(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono"
-              />
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setFixedFee(2500)}
-                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
-                >
-                  Rp 2.500 (SumoPod Bank Withdraw)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFixedFee(0)}
-                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition cursor-pointer"
-                >
-                  Rp 0 (Bebas Biaya)
-                </button>
-              </div>
-              <p className="text-[11px] text-zinc-400">
-                Biaya 1x penarikan (withdraw) dari SumoPod ke rekening bank pemilik toko (Rp 2.500). Langsung dialokasikan ke harga jual agar margin laba toko 100% utuh saat dicairkan ke rekening.
+                Persentase keuntungan murni toko di atas harga modal produk supplier.
               </p>
             </div>
 
@@ -264,7 +177,7 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
                 className="w-full px-3.5 py-2 rounded-xl text-xs bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono"
               />
               <p className="text-[11px] text-zinc-400">
-                Penyangga kurs untuk mengantisipasi selisih harga beli USDT saat store admin melakukan top-up dompet supplier.
+                Penyangga kurs untuk mengantisipasi perbedaan harga beli USDT di exchange lokal dibandingkan kurs pasar tengah.
               </p>
             </div>
 
@@ -316,47 +229,22 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
               </span>
             </div>
 
-            {simNetworkFeeIdr > 0 && (
-              <div className="flex justify-between">
-                <span className="text-zinc-500">2. Fee Transfer Network Supplier:</span>
-                <span className="font-mono font-medium text-amber-600 dark:text-amber-400">
-                  +${(Number(supplierNetworkFeeUsdt) || 0).toFixed(2)} USDT (Rp {simNetworkFeeIdr.toLocaleString('id-ID')})
-                </span>
-              </div>
-            )}
-
             <div className="flex justify-between">
-              <span className="text-zinc-500">3. Target Margin Toko ({marginPercent}%):</span>
+              <span className="text-zinc-500">2. Target Laba Bersih Toko ({marginPercent}%):</span>
               <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">
                 +Rp {simMarginIdr.toLocaleString('id-ID')}
               </span>
             </div>
 
-            {simFixedIdr > 0 && (
-              <div className="flex justify-between">
-                <span className="text-zinc-500">4. Alokasi Withdraw Bank (Flat):</span>
-                <span className="font-mono font-medium text-zinc-900 dark:text-white">
-                  +Rp {simFixedIdr.toLocaleString('id-ID')}
-                </span>
-              </div>
-            )}
-
             <div className="flex justify-between text-zinc-500 pt-1 border-t border-zinc-200/60 dark:border-zinc-800/60">
-              <span>Subtotal Sebelum Fee Gateway:</span>
+              <span>Subtotal Sebelum Pembulatan:</span>
               <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">
-                Rp {simSubtotalPreGateway.toLocaleString('id-ID')}
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span className="text-zinc-500">5. Alokasi MDR Gateway QRIS ({gatewayFeePercent}%):</span>
-              <span className="font-mono font-medium text-blue-600 dark:text-blue-400">
-                +Rp {simGatewayFeeIdr.toLocaleString('id-ID')}
+                Rp {simRawRetail.toLocaleString('id-ID')}
               </span>
             </div>
 
             <div className="flex justify-between text-zinc-500">
-              <span>Pembulatan Cantik:</span>
+              <span>Pembulatan Cantik (Kelipatan Rp 1.000):</span>
               <span className="font-mono font-medium text-purple-600 dark:text-purple-400">
                 +Rp {simRoundingSurplus.toLocaleString('id-ID')}
               </span>
@@ -374,10 +262,10 @@ export const PricingEngineView: React.FC<PricingEngineViewProps> = ({
           <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center justify-between text-xs">
             <div>
               <div className="font-bold text-emerald-900 dark:text-emerald-200">
-                Total Keuntungan Bersih Toko:
+                Total Keuntungan Bersih Toko per Item:
               </div>
               <div className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                100% aman masuk rekening tanpa nombok fee transfer & penarikan bank
+                Laba murni produk tanpa beban fee operasional yang diduplikasi
               </div>
             </div>
             <div className="font-mono text-lg font-black text-emerald-600 dark:text-emerald-400">

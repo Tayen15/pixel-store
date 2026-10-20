@@ -145,6 +145,22 @@ export const supportMessages = pgTable('support_messages', {
   createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).default(sql`CURRENT_TIMESTAMP`),
 });
 
+/**
+ * Store operational expenses (crypto gas fees, bank withdrawals, server costs).
+ * Kept separate from product retail prices for true P&L accounting.
+ */
+export const storeExpenses = pgTable('store_expenses', {
+  id: text('id').primaryKey(), // exp_...
+  expenseDate: text('expense_date').notNull(), // 'YYYY-MM-DD'
+  category: varchar('category', { length: 50 }).notNull(), // 'SUPPLIER_GAS_FEE' | 'BANK_WITHDRAWAL' | 'OPERATIONAL' | 'OTHER'
+  title: text('title').notNull(),
+  amountIdr: integer('amount_idr').notNull(),
+  amountUsdt: doublePrecision('amount_usdt'), // optional USDT amount (e.g. $0.1 gas fee or $5 topup)
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at', { mode: 'string', withTimezone: true }).default(sql`CURRENT_TIMESTAMP`),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UserSession = typeof userSessions.$inferSelect;
@@ -155,3 +171,5 @@ export type ProductCache = typeof productsCache.$inferSelect;
 export type AppSetting = typeof appSettings.$inferSelect;
 export type SupportConversation = typeof supportConversations.$inferSelect;
 export type SupportMessage = typeof supportMessages.$inferSelect;
+export type StoreExpense = typeof storeExpenses.$inferSelect;
+export type NewStoreExpense = typeof storeExpenses.$inferInsert;
