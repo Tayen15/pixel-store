@@ -111,7 +111,8 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
 
   const handleUsdtChange = (val: string) => {
     setFormAmountUsdt(val);
-    const num = parseFloat(val);
+    const normalized = val.replace(',', '.');
+    const num = parseFloat(normalized);
     if (!isNaN(num) && num > 0) {
       setFormAmountIdr(Math.round(num * (liveFx?.rate || 17800)));
     }
@@ -130,12 +131,13 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
 
     setIsSubmitting(true);
     try {
+      const parsedUsdt = formAmountUsdt ? parseFloat(formAmountUsdt.replace(',', '.')) : null;
       const { data, error } = await actions.adminCreateExpense({
         expenseDate: formDate,
         category: formCategory,
         title: formTitle.trim(),
         amountIdr: Number(formAmountIdr),
-        amountUsdt: formAmountUsdt ? parseFloat(formAmountUsdt) : null,
+        amountUsdt: !isNaN(parsedUsdt as number) ? parsedUsdt : null,
         notes: formNotes.trim() || null,
       });
 
@@ -580,7 +582,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                   </div>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     min="0"
                     placeholder="0.1"
                     value={formAmountUsdt}
@@ -599,7 +601,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                   type="number"
                   required
                   min="0"
-                  step="100"
+                  step="1"
                   value={formAmountIdr}
                   onChange={(e) => setFormAmountIdr(Number(e.target.value))}
                   className="w-full px-3.5 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-mono font-bold text-sm focus:outline-none"
