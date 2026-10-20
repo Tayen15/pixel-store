@@ -127,18 +127,22 @@ export async function executeOrderFulfillment(
         });
       }
 
-      // Non-blocking instant Telegram purchase alert to store admin
-      sendTelegramPurchaseNotification({
-        orderNumber: order.orderNumber,
-        productName: order.productName || 'Lisensi Digital',
-        quantity: order.quantity,
-        totalIdr: order.totalAmountIdr,
-        customerEmail: order.customerEmail,
-        customerWhatsapp: order.customerWhatsapp,
-        paymentMethod: 'MANUAL / QRIS',
-        licenseCodesCount: existingCodes.length,
-        isManual: true,
-      }).catch((teleErr) => console.warn('[Telegram] Manual purchase alert error:', teleErr));
+      // Guaranteed instant Telegram purchase alert to store admin
+      try {
+        await sendTelegramPurchaseNotification({
+          orderNumber: order.orderNumber,
+          productName: order.productName || 'Lisensi Digital',
+          quantity: order.quantity,
+          totalIdr: order.totalAmountIdr,
+          customerEmail: order.customerEmail,
+          customerWhatsapp: order.customerWhatsapp,
+          paymentMethod: 'MANUAL / QRIS',
+          licenseCodesCount: existingCodes.length,
+          isManual: true,
+        });
+      } catch (teleErr) {
+        console.warn('[Telegram] Manual purchase alert error:', teleErr);
+      }
 
       return {
         success: true,
@@ -215,18 +219,22 @@ export async function executeOrderFulfillment(
       });
     }
 
-    // Instant Telegram Purchase Notification to Store Admin
-    sendTelegramPurchaseNotification({
-      orderNumber: order.orderNumber,
-      productName: productRecord[0]?.name || order.productName || 'Lisensi Digital',
-      quantity: order.quantity,
-      totalIdr: order.totalAmountIdr,
-      customerEmail: order.customerEmail,
-      customerWhatsapp: order.customerWhatsapp,
-      paymentMethod: 'SumoPod QRIS',
-      licenseCodesCount: codes.length,
-      isManual: false,
-    }).catch((teleErr) => console.warn('[Telegram] Purchase alert error:', teleErr));
+    // Guaranteed instant Telegram Purchase Notification to Store Admin
+    try {
+      await sendTelegramPurchaseNotification({
+        orderNumber: order.orderNumber,
+        productName: productRecord[0]?.name || order.productName || 'Lisensi Digital',
+        quantity: order.quantity,
+        totalIdr: order.totalAmountIdr,
+        customerEmail: order.customerEmail,
+        customerWhatsapp: order.customerWhatsapp,
+        paymentMethod: 'SumoPod QRIS',
+        licenseCodesCount: codes.length,
+        isManual: false,
+      });
+    } catch (teleErr) {
+      console.warn('[Telegram] Purchase alert error:', teleErr);
+    }
 
     return {
       success: true,
@@ -264,13 +272,17 @@ export async function executeOrderFulfillment(
 
     console.error(`[ALERT] Order ${order.orderNumber} payment confirmed but upstream stock empty:`, errorMsg);
 
-    // Urgent Alert to Admin via Telegram
-    sendTelegramSupplierAlert({
-      orderNumber: order.orderNumber,
-      productName: order.productName || 'Lisensi Digital',
-      errorMessage: errorMsg,
-      customerEmail: order.customerEmail,
-    }).catch((teleErr) => console.warn('[Telegram] Supplier failure alert error:', teleErr));
+    // Guaranteed Urgent Alert to Admin via Telegram
+    try {
+      await sendTelegramSupplierAlert({
+        orderNumber: order.orderNumber,
+        productName: order.productName || 'Lisensi Digital',
+        errorMessage: errorMsg,
+        customerEmail: order.customerEmail,
+      });
+    } catch (teleErr) {
+      console.warn('[Telegram] Supplier failure alert error:', teleErr);
+    }
 
     return {
       success: false,

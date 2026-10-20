@@ -3014,19 +3014,21 @@ export async function adminCreateManualOrder(rawInput: {
     }
 
     // 8. Instant Telegram notification to store admin
-    sendTelegramPurchaseNotification({
-      orderNumber,
-      productName: productName.trim(),
-      quantity,
-      totalIdr: effectiveFinalAmountIdr,
-      customerEmail: cleanEmail || null,
-      customerWhatsapp: customerWhatsapp?.trim() || null,
-      paymentMethod: generateQris ? 'SumoPod QRIS (Manual Tagihan)' : 'Manual Direct',
-      licenseCodesCount: cleanCodes.length,
-      isManual: true,
-    }).catch((teleErr) => {
+    try {
+      await sendTelegramPurchaseNotification({
+        orderNumber,
+        productName: productName.trim(),
+        quantity,
+        totalIdr: effectiveFinalAmountIdr,
+        customerEmail: cleanEmail || null,
+        customerWhatsapp: customerWhatsapp?.trim() || null,
+        paymentMethod: generateQris ? 'SumoPod QRIS (Manual Tagihan)' : 'Manual Direct',
+        licenseCodesCount: cleanCodes.length,
+        isManual: true,
+      });
+    } catch (teleErr) {
       console.warn('[Telegram] Manual order notification error:', teleErr);
-    });
+    }
 
     return {
       success: true,
