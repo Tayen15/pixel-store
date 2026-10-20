@@ -3,8 +3,12 @@ import '@/styles/global.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL || 'https://pixelstore.id'),
-  title: 'Pixel Store — Reseller Akun Premium & Lisensi Digital Instan',
-  description: 'Dapatkan akun langganan premium dan lisensi digital langsung via QRIS dengan pengiriman otomatis instan.',
+  title: {
+    default: 'Pixel Store — Toko Layanan Akun Digital & Langganan Premium',
+    template: '%s | Pixel Store',
+  },
+  description:
+    'Pixel Store adalah toko digital penyedia berbagai layanan akun premium, tools produktivitas, dan kebutuhan software digital terpercaya dengan transaksi cepat serta aktivasi instan otomatis.',
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
@@ -14,9 +18,26 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
   openGraph: {
-    title: 'Pixel Store — Reseller Akun Premium & Lisensi Digital Instan',
-    description: 'Dapatkan akun langganan premium dan lisensi digital langsung via QRIS dengan pengiriman otomatis instan.',
+    title: 'Pixel Store — Toko Layanan Akun Digital & Langganan Premium',
+    description:
+      'Toko digital penyedia berbagai kebutuhan akun langganan premium, tools, dan software terpercaya dengan proses pemesanan mudah serta aktivasi langsung instan.',
+    siteName: 'Pixel Store',
+    locale: 'id_ID',
     type: 'website',
+    images: [
+      {
+        url: '/logo-app.png',
+        width: 512,
+        height: 512,
+        alt: 'Pixel Store Logo',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Pixel Store — Toko Layanan Akun Digital & Langganan Premium',
+    description:
+      'Toko digital penyedia berbagai kebutuhan akun langganan premium, tools, dan software terpercaya dengan transaksi cepat serta aktivasi instan.',
     images: ['/logo-app.png'],
   },
 };
