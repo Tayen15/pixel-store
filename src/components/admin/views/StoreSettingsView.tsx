@@ -669,7 +669,7 @@ export const StoreSettingsView: React.FC<StoreSettingsViewProps> = ({
               </div>
               <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
                 <span>Chat ID Admin (HP):</span>
-                <span className="font-mono font-medium text-zinc-900 dark:text-white">1116767059</span>
+                <span className="font-mono font-medium text-emerald-600 dark:text-emerald-400">Terkonfigurasi (.env)</span>
               </div>
               <div className="flex justify-between items-center text-zinc-600 dark:text-zinc-400">
                 <span>Webhook URL:</span>

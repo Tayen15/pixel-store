@@ -11,14 +11,9 @@ export interface TelegramConfig {
   webhookSecret?: string;
 }
 
-// Fallback configuration ensuring Telegram notifications work in all environments
-const DEFAULT_BOT_TOKEN = '8694168827:AAGP2ZwlCF92K1zQcVQdhWuN8w6sf49WVlc';
-const DEFAULT_ADMIN_CHAT_ID = '1116767059';
-const DEFAULT_WEBHOOK_SECRET = 'pixel_tele_sec_994821a8b3c4';
-
 export function getTelegramConfig(): TelegramConfig | null {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || DEFAULT_BOT_TOKEN;
-  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || DEFAULT_ADMIN_CHAT_ID;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID;
 
   if (!botToken || !adminChatId) {
     return null;
@@ -27,7 +22,7 @@ export function getTelegramConfig(): TelegramConfig | null {
   return {
     botToken,
     adminChatId,
-    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET,
+    webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
   };
 }
 
