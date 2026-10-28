@@ -12,16 +12,22 @@ export default async function HomePage() {
   const config = await getSystemConfig();
   const dynamicPricing = await getDynamicPricingConfig();
 
-  let cached = await db.select().from(schema.productsCache);
+  let cached: Array<typeof schema.productsCache.$inferSelect> = [];
 
-  // Cold start guard: if cache is totally empty, seed it once synchronously
-  if (cached.length === 0) {
-    try {
-      await syncRealtimeCatalog(true);
-      cached = await db.select().from(schema.productsCache);
-    } catch (err) {
-      console.warn('Initial cold-start catalog sync error:', (err as Error).message);
+  try {
+    cached = await db.select().from(schema.productsCache);
+
+    // Cold start guard: if cache is totally empty, seed it once synchronously
+    if (cached.length === 0) {
+      try {
+        await syncRealtimeCatalog(true);
+        cached = await db.select().from(schema.productsCache);
+      } catch (err) {
+        console.warn('Initial cold-start catalog sync error:', (err as Error).message);
+      }
     }
+  } catch (err) {
+    console.warn('[HomePage] Database unavailable during prerender, fallback to empty cache:', (err as Error).message);
   }
 
   const products: ProductItem[] = cached

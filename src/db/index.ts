@@ -115,8 +115,10 @@ export async function ensureDatabaseTables(): Promise<void> {
   initPromise = (async () => {
     if (!isPostgresUrl) {
       console.warn(
-        '[PostgreSQL] DATABASE_URL di .env belum diarahkan ke database PostgreSQL yang valid.'
+        '[PostgreSQL] DATABASE_URL belum diarahkan ke database PostgreSQL yang valid atau sedang dalam tahap build CI tanpa koneksi DB. Menunda inisialisasi tabel.'
       );
+      databaseReady = false;
+      return;
     }
 
     try {
