@@ -212,11 +212,12 @@ export const SupportChat: React.FC<SupportChatProps> = ({
     }
   };
 
-  // Poll for admin replies only if a real conversationId exists in database
+  // Poll for admin replies with visibility guard & 10s interval to prevent Neon compute exhaustion
   useEffect(() => {
     if (!conversationId || !currentUser) return;
 
-    pollingRef.current = setInterval(async () => {
+    const pollBuyerMessages = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const { data } = await actions.getBuyerChatMessages({
           conversationId,
@@ -235,10 +236,20 @@ export const SupportChat: React.FC<SupportChatProps> = ({
           });
         }
       } catch {}
-    }, 3000);
+    };
+
+    pollingRef.current = setInterval(pollBuyerMessages, 10000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        pollBuyerMessages();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [conversationId, currentUser]);
 

@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { eq, and, gt } from 'drizzle-orm';
 import { db, schema, sqlClient, type User } from '@/db';
-import { auth as neonAuth } from '@/lib/auth/server';
 
 export const USER_COOKIE_NAME = 'pixel_user_session';
 
@@ -67,6 +66,45 @@ export async function createUserAccount(data: {
       name: data.name.trim(),
       phone: data.phone?.trim() || null,
       role: data.role || 'customer',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  return inserted[0];
+}
+
+/**
+ * Finds an existing user by email or creates a new one via OAuth provider.
+ */
+export async function findOrCreateOAuthUser(data: {
+  email: string;
+  name: string;
+  provider: 'google';
+}): Promise<User> {
+  const normalizedEmail = data.email.trim().toLowerCase();
+
+  const existing = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.email, normalizedEmail));
+
+  if (existing.length > 0) {
+    return existing[0];
+  }
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const passwordHash = `oauth:${data.provider}:${crypto.randomBytes(16).toString('hex')}`;
+
+  const inserted = await db
+    .insert(schema.users)
+    .values({
+      id,
+      email: normalizedEmail,
+      passwordHash,
+      name: data.name.trim() || normalizedEmail.split('@')[0],
+      role: 'customer',
       createdAt: now,
       updatedAt: now,
     })
@@ -231,31 +269,9 @@ export type EffectiveUser = User & {
 };
 
 /**
- * Resolves the currently authenticated user across both Neon Managed Better Auth
- * (including Google OAuth sessions) and legacy encrypted session tokens.
+ * Resolves the currently authenticated user from active session token.
  */
 export async function getEffectiveUser(): Promise<EffectiveUser | null> {
-  // 1. Check Neon Managed Better Auth session first
-  try {
-    const neonSession = await neonAuth.getSession();
-    if (neonSession?.data?.user) {
-      const nu = neonSession.data.user as any;
-      const syncedUser = await syncNeonOAuthUser({
-        id: nu.id,
-        email: nu.email,
-        name: nu.name || nu.email,
-        role: nu.role,
-      });
-      return {
-        ...syncedUser,
-        image: (nu.image as string) || null,
-      };
-    }
-  } catch (err) {
-    // Continue to cookie session check if Neon Auth is not initialized or throws
-  }
-
-  // 2. Fall back to local cookie session
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(USER_COOKIE_NAME)?.value;
@@ -285,34 +301,13 @@ export async function createPasswordResetCode(email: string): Promise<{
 }> {
   const normalizedEmail = email.trim().toLowerCase();
 
-  // Find user in public.users or neon_auth.user
-  let userName = 'Pelanggan';
-  let userExists = false;
-
-  const localUser = await db
+  const [localUser] = await db
     .select()
     .from(schema.users)
     .where(eq(schema.users.email, normalizedEmail))
     .limit(1);
 
-  if (localUser.length > 0) {
-    userExists = true;
-    userName = localUser[0].name;
-  } else {
-    try {
-      const neonRows = await (sqlClient as any)`
-        SELECT name, email FROM neon_auth.user WHERE email = ${normalizedEmail} LIMIT 1
-      `;
-      if (neonRows.length > 0) {
-        userExists = true;
-        userName = neonRows[0].name || userName;
-      }
-    } catch (neonErr) {
-      console.warn('[PasswordReset] Failed to check neon_auth:', (neonErr as Error).message);
-    }
-  }
-
-  if (!userExists) {
+  if (!localUser) {
     throw new Error('Alamat email belum terdaftar dalam sistem.');
   }
 
@@ -323,15 +318,15 @@ export async function createPasswordResetCode(email: string): Promise<{
 
   try {
     // Delete any existing reset codes for this email
-    await (sqlClient as any)`
-      DELETE FROM neon_auth.verification WHERE identifier = ${identifier}
-    `;
+    await db.delete(schema.verificationCodes).where(eq(schema.verificationCodes.identifier, identifier));
 
     // Insert new verification entry
-    await (sqlClient as any)`
-      INSERT INTO neon_auth.verification (id, identifier, value, "expiresAt", "createdAt", "updatedAt")
-      VALUES (gen_random_uuid(), ${identifier}, ${code}, ${expiresAt}, NOW(), NOW())
-    `;
+    await db.insert(schema.verificationCodes).values({
+      id: crypto.randomUUID(),
+      identifier,
+      value: code,
+      expiresAt,
+    });
   } catch (dbErr) {
     console.error('[PasswordReset] Failed to store verification code:', dbErr);
     throw new Error('Gagal memproses kode reset. Silakan coba lagi.');
@@ -339,7 +334,7 @@ export async function createPasswordResetCode(email: string): Promise<{
 
   return {
     code,
-    name: userName,
+    name: localUser.name,
     email: normalizedEmail,
   };
 }
@@ -364,29 +359,24 @@ export async function verifyAndApplyPasswordReset(
     throw new Error('Kata sandi baru minimal harus terdiri dari 6 karakter.');
   }
 
-  // 1. Check verification code in neon_auth.verification
+  // 1. Check verification code in verification_codes table
   try {
-    const rows = await (sqlClient as any)`
-      SELECT id, value, "expiresAt"
-      FROM neon_auth.verification
-      WHERE identifier = ${identifier}
-        AND "expiresAt" > NOW()
-      ORDER BY "createdAt" DESC
-      LIMIT 1
-    `;
+    const [record] = await db
+      .select()
+      .from(schema.verificationCodes)
+      .where(eq(schema.verificationCodes.identifier, identifier))
+      .limit(1);
 
-    if (!rows || rows.length === 0) {
+    if (!record || new Date(record.expiresAt).getTime() < Date.now()) {
       throw new Error('Kode verifikasi telah kadaluarsa atau tidak valid. Silakan minta kode baru.');
     }
 
-    if (rows[0].value.trim() !== trimmedCode) {
+    if (record.value.trim() !== trimmedCode) {
       throw new Error('Kode verifikasi yang Anda masukkan tidak sesuai.');
     }
 
     // Delete verified entry immediately to prevent replay
-    await (sqlClient as any)`
-      DELETE FROM neon_auth.verification WHERE identifier = ${identifier}
-    `;
+    await db.delete(schema.verificationCodes).where(eq(schema.verificationCodes.identifier, identifier));
   } catch (verifyErr) {
     if ((verifyErr as Error).message.includes('Kode verifikasi')) {
       throw verifyErr;
@@ -399,32 +389,18 @@ export async function verifyAndApplyPasswordReset(
   const newPasswordHash = hashPassword(newPassword);
   const now = new Date().toISOString();
 
-  // 3. Update or create user in public.users
-  let targetUser: User | null = null;
-  const existingLocal = await db
-    .select()
-    .from(schema.users)
+  // 3. Update password in users table
+  const [targetUser] = await db
+    .update(schema.users)
+    .set({
+      passwordHash: newPasswordHash,
+      updatedAt: now,
+    })
     .where(eq(schema.users.email, normalizedEmail))
-    .limit(1);
+    .returning();
 
-  if (existingLocal.length > 0) {
-    const [updated] = await db
-      .update(schema.users)
-      .set({
-        passwordHash: newPasswordHash,
-        updatedAt: now,
-      })
-      .where(eq(schema.users.email, normalizedEmail))
-      .returning();
-    targetUser = updated;
-  } else {
-    // If user registered via OAuth only, initialize their local record
-    targetUser = await createUserAccount({
-      email: normalizedEmail,
-      password: newPassword,
-      name: normalizedEmail.split('@')[0],
-      role: 'customer',
-    });
+  if (!targetUser) {
+    throw new Error('Pengguna tidak ditemukan untuk memperbarui kata sandi.');
   }
 
   // 4. Invalidate all past sessions for this user for security
@@ -453,9 +429,7 @@ export async function adminDirectResetUserPassword(
   const newPasswordHash = hashPassword(newPassword);
   const now = new Date().toISOString();
 
-  // 1. Update public.users
-  let targetUser: User | null = null;
-  const [updated] = await db
+  const [targetUser] = await db
     .update(schema.users)
     .set({
       passwordHash: newPasswordHash,
@@ -464,32 +438,11 @@ export async function adminDirectResetUserPassword(
     .where(eq(schema.users.id, userId))
     .returning();
 
-  if (updated) {
-    targetUser = updated;
-  } else {
-    // Try by email matching neon_auth user
-    try {
-      const neonRows = await (sqlClient as any)`
-        SELECT id, name, email FROM neon_auth.user WHERE id = ${userId}::uuid OR email = ${userId} LIMIT 1
-      `;
-      if (neonRows.length > 0) {
-        const nr = neonRows[0];
-        targetUser = await createUserAccount({
-          id: nr.id,
-          email: nr.email,
-          name: nr.name || 'Pengguna',
-          password: newPassword,
-          role: 'customer',
-        });
-      }
-    } catch {}
-  }
-
   if (!targetUser) {
-    throw new Error('Pengguna tidak ditemukan dalam database.');
+    throw new Error(`Pengguna dengan ID '${userId}' tidak ditemukan di database.`);
   }
 
-  // 2. Clear old sessions
+  // Clear old sessions
   try {
     await db
       .delete(schema.userSessions)

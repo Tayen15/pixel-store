@@ -46,7 +46,10 @@ const isSslRequired =
   dbUrl.includes('neon.tech') ||
   dbUrl.includes('supabase.co') ||
   dbUrl.includes('railway.app') ||
-  dbUrl.includes('render.com');
+  dbUrl.includes('render.com') ||
+  dbUrl.includes('amazonaws.com') ||
+  dbUrl.includes('rds.amazonaws.com') ||
+  dbUrl.includes('herokuapp.com');
 
 /**
  * Neon is reached over HTTPS (port 443) instead of the Postgres TCP port.
@@ -61,7 +64,7 @@ const isSslRequired =
  * it speaks Postgres over HTTP/WebSockets on 443, so no TCP port is needed.
  * Queries are stateless, so an idle connection can never go stale.
  *
- * TCP (postgres.js) is kept for any non-Neon host, e.g. a local Postgres.
+ * TCP (postgres.js) is kept for any non-Neon host, e.g. a local Postgres or Heroku Postgres.
  */
 const isNeonHost = (() => {
   try {
@@ -77,8 +80,8 @@ export const sqlClient = isNeonHost
       max: 10,
       idle_timeout: 20,
       connect_timeout: 10,
-      ssl: isSslRequired ? 'require' : false,
-      prepare: false, // Essential for Neon pooler / PgBouncer
+      ssl: isSslRequired ? { rejectUnauthorized: false } : false,
+      prepare: false, // Essential for PgBouncer / Heroku
       onnotice: () => {}, // Suppress benign PostgreSQL NOTICE messages (e.g. relation already exists)
     });
 
@@ -117,6 +120,40 @@ export async function ensureDatabaseTables(): Promise<void> {
     }
 
     try {
+      // Fast probe: if key tables already exist, skip executing 25+ DDL queries
+      // to conserve Neon compute hours and prevent unnecessary system catalog locks
+      let tablesAlreadyExist = false;
+      try {
+        const check = await sqlClient`SELECT 1 FROM products_cache LIMIT 1`;
+        if (Array.isArray(check)) {
+          tablesAlreadyExist = true;
+        }
+      } catch {
+        tablesAlreadyExist = false;
+      }
+
+      if (tablesAlreadyExist) {
+        // Fast ensure verification_codes exists
+        try {
+          await sqlClient`
+            CREATE TABLE IF NOT EXISTS verification_codes (
+              id TEXT PRIMARY KEY,
+              identifier TEXT NOT NULL,
+              value TEXT NOT NULL,
+              expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+          `;
+        } catch {}
+        databaseReady = true;
+        console.log(
+          `[PostgreSQL] Database ready (tables verified) via ${
+            isNeonHost ? 'Neon HTTP driver (port 443)' : 'TCP driver'
+          }.`
+        );
+        return;
+      }
+
       // 1. Application Settings
       try {
         await sqlClient`
@@ -162,6 +199,21 @@ export async function ensureDatabaseTables(): Promise<void> {
         `;
       } catch (err) {
         console.warn('user_sessions table init notice:', (err as Error).message);
+      }
+
+      // 3b. Verification Codes (Password Reset OTP)
+      try {
+        await sqlClient`
+          CREATE TABLE IF NOT EXISTS verification_codes (
+            id TEXT PRIMARY KEY,
+            identifier TEXT NOT NULL,
+            value TEXT NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          );
+        `;
+      } catch (err) {
+        console.warn('verification_codes table init notice:', (err as Error).message);
       }
 
       // 4. Products Cache
@@ -329,6 +381,7 @@ export async function ensureDatabaseTables(): Promise<void> {
       // Performance Indexes
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token);`; } catch {}
+      try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_verif_codes_ident ON verification_codes(identifier);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);`; } catch {}
       try { await sqlClient`CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);`; } catch {}

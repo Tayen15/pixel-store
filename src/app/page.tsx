@@ -3,9 +3,10 @@ import { db, schema } from '@/db';
 import { calculateRetailPriceIdr, getDynamicPricingConfig } from '@/lib/pricing/engine';
 import { getSystemConfig } from '@/lib/settings/service';
 import { StoreFront, type ProductItem } from '@/components/StoreFront';
-import { syncRealtimeCatalog, triggerBackgroundCatalogSyncIfNeeded } from '@/lib/catalog/service';
+import { syncRealtimeCatalog } from '@/lib/catalog/service';
 
-export const revalidate = 0; // Dynamic server rendering for fresh stock & pricing
+// Incremental Static Regeneration (120s TTL): protects Neon database from compute exhaustion on page traffic
+export const revalidate = 120;
 
 export default async function HomePage() {
   const config = await getSystemConfig();
@@ -21,9 +22,6 @@ export default async function HomePage() {
     } catch (err) {
       console.warn('Initial cold-start catalog sync error:', (err as Error).message);
     }
-  } else {
-    // Smart Hybrid: Trigger non-blocking background auto-sync if cache older than 3 minutes (0ms delay for user)
-    triggerBackgroundCatalogSyncIfNeeded();
   }
 
   const products: ProductItem[] = cached

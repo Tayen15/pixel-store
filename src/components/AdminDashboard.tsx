@@ -78,9 +78,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedOrderForModal, setSelectedOrderForModal] = useState<any>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
 
-  // Poll for unread chats count
+  // Poll for unread chats count with visibility guard & conservative 20s interval
   useEffect(() => {
     const checkUnreadChats = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const { data } = await actions.adminGetChatConversations({ status: 'ALL' });
         if (data?.totalUnread !== undefined) {
@@ -90,8 +91,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
 
     checkUnreadChats();
-    const interval = setInterval(checkUnreadChats, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(checkUnreadChats, 20000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        checkUnreadChats();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Toast notification state

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { actions } from '@/actions';
 import { 
   Lock, 
@@ -60,6 +60,20 @@ export const AdminLoginForm: React.FC = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const authErr = params.get('auth_error');
+      if (authErr === 'forbidden_not_admin') {
+        setErrorMessage('Akun Google ini terdaftar sebagai pelanggan biasa dan tidak memiliki hak akses Administrator.');
+      } else if (authErr === 'missing_google_credentials') {
+        setErrorMessage('Kredensial Google OAuth belum disetel di server.');
+      } else if (authErr && authErr !== 'oauth_cancelled') {
+        setErrorMessage(`Autentikasi Google gagal (${authErr}).`);
+      }
+    }
+  }, []);
 
   const handleGoogleSignIn = async () => {
     setIsGoogleLoading(true);

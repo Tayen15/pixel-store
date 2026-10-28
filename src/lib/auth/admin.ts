@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { eq } from 'drizzle-orm';
 import '../env';
-import { auth as neonAuth } from './server';
 import { db, schema, sqlClient } from '@/db';
 
 import { getEffectiveUser } from './user';
@@ -190,15 +189,7 @@ export async function getAdminSession(): Promise<{
               .where(eq(schema.users.email, payload.email))
               .limit(1);
 
-            let isAdminInNeon = false;
-            try {
-              const neonSqlRows = await (sqlClient as any)`
-                SELECT role FROM neon_auth.user WHERE email = ${payload.email} LIMIT 1
-              `;
-              isAdminInNeon = neonSqlRows?.[0]?.role === 'admin';
-            } catch {}
-
-            const isAdmin = localUser?.role === 'admin' || isAdminInNeon;
+            const isAdmin = localUser?.role === 'admin';
 
             if (isAdmin) {
               return {
@@ -229,67 +220,7 @@ export async function getAdminSession(): Promise<{
     }
   } catch {}
 
-  // 2. Check Neon Better Auth session (including Google OAuth sign-in)
-  try {
-    const neonSession = await neonAuth.getSession();
-    if (neonSession?.data?.user) {
-      const nu = neonSession.data.user as any;
-      if (nu.role === 'admin') {
-        return {
-          isAuthenticated: true,
-          user: {
-            id: nu.id,
-            name: nu.name || nu.email,
-            email: nu.email,
-            role: 'admin',
-          },
-        };
-      }
-
-      // Check if user is recorded as admin in local database
-      const [localUser] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.email, nu.email))
-        .limit(1);
-
-      if (localUser && localUser.role === 'admin') {
-        return {
-          isAuthenticated: true,
-          user: {
-            id: localUser.id,
-            name: localUser.name,
-            email: localUser.email,
-            role: 'admin',
-          },
-        };
-      }
-
-      // Check directly in neon_auth.user via SQL if session claim hasn't refreshed
-      try {
-        const neonSqlRows = await (sqlClient as any)`
-          SELECT id, role, name, email FROM neon_auth.user 
-          WHERE email = ${nu.email} OR id::text = ${nu.id} 
-          LIMIT 1
-        `;
-        if (neonSqlRows?.[0]?.role === 'admin') {
-          return {
-            isAuthenticated: true,
-            user: {
-              id: neonSqlRows[0].id,
-              name: neonSqlRows[0].name || nu.name || nu.email,
-              email: neonSqlRows[0].email || nu.email,
-              role: 'admin',
-            },
-          };
-        }
-      } catch {}
-    }
-  } catch (err) {
-    // Neon Auth unreachable or not authenticated, fallback
-  }
-
-  // 3. Check effective user session (USER_COOKIE_NAME from store login)
+  // 2. Check effective user session (USER_COOKIE_NAME from store login)
   try {
     const effectiveUser = await getEffectiveUser();
     if (effectiveUser && effectiveUser.role === 'admin') {
@@ -322,90 +253,27 @@ export interface AdminManagedUser {
 }
 
 /**
- * Retrieves the unified list of registered users across both Neon Managed Better Auth
- * (neon_auth.user, neon_auth.account) and legacy local PostgreSQL users (public.users).
+ * Retrieves the unified list of registered users from PostgreSQL (public.users).
  */
 export async function getAdminUsersList(): Promise<AdminManagedUser[]> {
-  const usersMap = new Map<string, AdminManagedUser>();
-
-  // 1. Fetch from neon_auth.user & neon_auth.account (primary Better Auth source)
-  try {
-    const neonRows = await (sqlClient as any)`
-      SELECT 
-        nu.id::text as id, 
-        nu.name, 
-        nu.email, 
-        nu."emailVerified" as "emailVerified", 
-        nu.image, 
-        nu.role, 
-        nu.banned,
-        nu."createdAt" as "createdAt", 
-        COALESCE(acc."providerId", 'credential') as provider,
-        pu.phone
-      FROM neon_auth.user nu 
-      LEFT JOIN LATERAL (
-        SELECT "providerId" FROM neon_auth.account WHERE "userId" = nu.id LIMIT 1
-      ) acc ON true
-      LEFT JOIN public.users pu ON pu.email = nu.email OR pu.id = nu.id::text
-      ORDER BY nu."createdAt" DESC;
-    `;
-
-    for (const r of neonRows) {
-      const email = (r.email || '').toLowerCase().trim();
-      const normRole = (r.role === 'admin' ? 'admin' : 'customer') as 'admin' | 'customer';
-      const userObj: AdminManagedUser = {
-        id: r.id,
-        name: r.name || r.email || 'Pengguna',
-        email: r.email,
-        phone: r.phone || null,
-        role: normRole,
-        provider: (r.provider === 'google' ? 'google' : 'credential') as 'google' | 'credential',
-        image: r.image || null,
-        emailVerified: Boolean(r.emailVerified),
-        banned: Boolean(r.banned),
-        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
-      };
-      if (email) {
-        usersMap.set(email, userObj);
-      } else {
-        usersMap.set(r.id, userObj);
-      }
-    }
-  } catch (err) {
-    console.warn('[Admin] Failed to read from neon_auth.user:', (err as Error).message);
-  }
-
-  // 2. Fetch from public.users to ensure any legacy registered accounts are included
   try {
     const localUsers = await db.select().from(schema.users);
-    for (const u of localUsers) {
-      const email = (u.email || '').toLowerCase().trim();
-      if (!usersMap.has(email)) {
-        usersMap.set(email, {
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          phone: u.phone || null,
-          role: u.role === 'admin' ? 'admin' : 'customer',
-          provider: 'credential',
-          image: null,
-          emailVerified: false,
-          banned: false,
-          createdAt: u.createdAt || new Date().toISOString(),
-        });
-      } else {
-        // Enrich phone if present in public.users but missing in neon_auth
-        const existing = usersMap.get(email)!;
-        if (!existing.phone && u.phone) {
-          existing.phone = u.phone;
-        }
-      }
-    }
+    return localUsers
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone || null,
+        role: (u.role === 'admin' ? 'admin' : 'customer') as 'admin' | 'customer',
+        provider: 'credential' as const,
+        image: null,
+        emailVerified: true,
+        banned: false,
+        createdAt: u.createdAt || new Date().toISOString(),
+      }))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (err) {
     console.warn('[Admin] Failed to read from public.users:', (err as Error).message);
+    return [];
   }
-
-  return Array.from(usersMap.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
 }

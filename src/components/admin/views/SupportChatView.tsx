@@ -128,17 +128,28 @@ export const SupportChatView: React.FC<SupportChatViewProps> = ({ showToast, onN
     }
   }, [activeConvId]);
 
-  // Periodic polling for realtime updates
+  // Periodic polling for realtime updates with visibility guard & conservative 12s interval
   useEffect(() => {
-    pollingRef.current = setInterval(() => {
+    const pollUpdates = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchConversations(true);
       if (activeConvId) {
         fetchActiveMessages(activeConvId, true);
       }
-    }, 3500);
+    };
+
+    pollingRef.current = setInterval(pollUpdates, 12000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        pollUpdates();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [activeConvId, statusFilter]);
 

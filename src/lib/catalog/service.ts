@@ -88,30 +88,33 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
       return { count: 0, products: [], isFresh: false };
     }
 
-  // 1. Atomic upsert with fresh prices, logos, and realtime stock counts (avoids FK violation on orders)
-  for (const item of rawProducts) {
-    const baseUsdt = Number(item.price_usdt ?? item.price ?? (item as unknown as { base_price_usdt?: number | string }).base_price_usdt ?? 0);
-    const pricing = calculateRetailPriceIdr(baseUsdt, 1, dynamicPricing);
-    const category = categorizeProduct(item.name);
-    const name = cleanProductName(item.name);
-    const cleanDescription = (item as unknown as { description_text?: string }).description_text || item.description || 'Lisensi original resmi siap aktivasi.';
-    const logoUrl = getRealBrandLogoUrl(name);
+    // 1. Single atomic batch upsert with fresh prices, logos, and realtime stock counts (1 query instead of N queries)
+    const valuesToUpsert = rawProducts.map((item) => {
+      const baseUsdt = Number(
+        item.price_usdt ?? item.price ?? (item as unknown as { base_price_usdt?: number | string }).base_price_usdt ?? 0
+      );
+      const pricing = calculateRetailPriceIdr(baseUsdt, 1, dynamicPricing);
+      const category = categorizeProduct(item.name);
+      const name = cleanProductName(item.name);
+      const cleanDescription =
+        (item as unknown as { description_text?: string }).description_text ||
+        item.description ||
+        'Lisensi original resmi siap aktivasi.';
+      const logoUrl = getRealBrandLogoUrl(name);
 
-    // Rigorous stock & availability calculation
-    const isExplicitlyUnavailable = item.available === false;
-    let stockCount = 0;
-    if (!isExplicitlyUnavailable) {
-      if (typeof item.stock === 'number') {
-        stockCount = Math.max(0, item.stock);
-      } else if (item.stock === true || item.available === true) {
-        stockCount = 99;
+      // Rigorous stock & availability calculation
+      const isExplicitlyUnavailable = item.available === false;
+      let stockCount = 0;
+      if (!isExplicitlyUnavailable) {
+        if (typeof item.stock === 'number') {
+          stockCount = Math.max(0, item.stock);
+        } else if (item.stock === true || item.available === true) {
+          stockCount = 99;
+        }
       }
-    }
-    const inStock = !isExplicitlyUnavailable && stockCount > 0;
+      const inStock = !isExplicitlyUnavailable && stockCount > 0;
 
-    await db
-      .insert(schema.productsCache)
-      .values({
+      return {
         supplierProductId: item.id,
         name,
         category,
@@ -122,23 +125,29 @@ export async function syncRealtimeCatalog(force = false): Promise<{ count: numbe
         stock: stockCount,
         inStock,
         isActive: inStock,
-      })
-      .onConflictDoUpdate({
-        target: schema.productsCache.supplierProductId,
-        set: {
-          name,
-          category,
-          description: cleanDescription,
-          basePriceUsdt: baseUsdt,
-          retailPriceIdr: sql`COALESCE(products_cache.custom_retail_price_idr, ${pricing.unitPriceIdr})`,
-          imageUrl: logoUrl,
-          stock: stockCount,
-          inStock,
-          isActive: inStock,
-          lastSyncedAt: sql`CURRENT_TIMESTAMP`,
-        },
-      });
-  }
+      };
+    });
+
+    if (valuesToUpsert.length > 0) {
+      await db
+        .insert(schema.productsCache)
+        .values(valuesToUpsert)
+        .onConflictDoUpdate({
+          target: schema.productsCache.supplierProductId,
+          set: {
+            name: sql.raw('EXCLUDED.name'),
+            category: sql.raw('EXCLUDED.category'),
+            description: sql.raw('EXCLUDED.description'),
+            basePriceUsdt: sql.raw('EXCLUDED.base_price_usdt'),
+            retailPriceIdr: sql.raw('COALESCE(products_cache.custom_retail_price_idr, EXCLUDED.retail_price_idr)'),
+            imageUrl: sql.raw('EXCLUDED.image_url'),
+            stock: sql.raw('EXCLUDED.stock'),
+            inStock: sql.raw('EXCLUDED.in_stock'),
+            isActive: sql.raw('EXCLUDED.is_active'),
+            lastSyncedAt: sql.raw('CURRENT_TIMESTAMP'),
+          },
+        });
+    }
 
   // 2. Mark products no longer provided by supplier as out-of-stock and inactive
   const activeSupplierIds = rawProducts
@@ -192,16 +201,20 @@ export function triggerBackgroundCatalogSyncIfNeeded(minIntervalMs = BACKGROUND_
 let syncSchedulerTimer: NodeJS.Timeout | null = null;
 
 /**
- * Starts a recurring background timer (every 5 minutes by default) that runs
+ * Starts a recurring background timer that runs
  * independently of visitor traffic to guarantee catalog freshness.
+ * Disabled by default to protect Neon compute allowance (prevents 24/7 keep-alive).
  */
-export function startAutoCatalogSyncScheduler(intervalMs = 5 * 60 * 1000): void {
+export function startAutoCatalogSyncScheduler(intervalMs = 15 * 60 * 1000): void {
+  if (process.env.ENABLE_BACKGROUND_CATALOG_SYNC !== 'true') {
+    return;
+  }
   if (syncSchedulerTimer) return; // Prevent duplicate timers
 
-  // Run initial background sync after 10 seconds of server boot
+  // Run initial background sync after 15 seconds of server boot
   setTimeout(() => {
     triggerBackgroundCatalogSyncIfNeeded(0);
-  }, 10 * 1000);
+  }, 15 * 1000);
 
   // Recurring interval
   syncSchedulerTimer = setInterval(() => {

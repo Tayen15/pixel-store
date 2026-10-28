@@ -37,6 +37,17 @@ export const userSessions = pgTable('user_sessions', {
 });
 
 /**
+ * 6-digit OTP verification codes for password resets.
+ */
+export const verificationCodes = pgTable('verification_codes', {
+  id: text('id').primaryKey(), // UUID string
+  identifier: text('identifier').notNull(), // e.g. reset:email@domain.com
+  value: text('value').notNull(), // 6-digit OTP code
+  expiresAt: timestamp('expires_at', { mode: 'string', withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { mode: 'string', withTimezone: true }).default(sql`CURRENT_TIMESTAMP`),
+});
+
+/**
  * Cached wholesale products from InsightXPro augmented with display metadata.
  */
 export const productsCache = pgTable('products_cache', {

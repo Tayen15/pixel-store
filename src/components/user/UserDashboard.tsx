@@ -109,37 +109,23 @@ export const UserDashboard: React.FC<UserDashboardProps> = ({
   const [cancellingOrderNumber, setCancellingOrderNumber] = useState<string | null>(null);
   const [resumingOrderNumber, setResumingOrderNumber] = useState<string | null>(null);
 
-  // Load user data on client mount if initialUser was not passed or if returning from OAuth redirect
+  // Load user data on client mount if initialUser was not passed
   useEffect(() => {
-    const hasVerifier = typeof window !== 'undefined' && window.location.search.includes('neon_auth_session_verifier');
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const authErr = params.get('auth_error');
+      if (authErr) {
+        if (authErr === 'missing_google_credentials') {
+          setAuthError('Kredensial Google OAuth belum disetel di server.');
+        } else if (authErr === 'token_exchange_failed' || authErr === 'invalid_oauth_state') {
+          setAuthError('Gagal memverifikasi respon autentikasi dari Google. Silakan coba kembali.');
+        } else if (authErr !== 'oauth_cancelled') {
+          setAuthError(`Autentikasi Google gagal (${authErr}).`);
+        }
+      }
+    }
 
-    if (hasVerifier) {
-      setIsGoogleLoading(true);
-      // Explicitly trigger getSession to ensure client SDK finalizes the token exchange
-      authClient
-        .getSession()
-        .then(() => {
-          return actions.getCurrentUser();
-        })
-        .then(({ data }) => {
-          if (data?.user) {
-            setUser(data.user);
-            loadOrders();
-            // Clean up the URL verifier parameter
-            if (typeof window !== 'undefined') {
-              const cleanUrl = new URL(window.location.href);
-              cleanUrl.searchParams.delete('neon_auth_session_verifier');
-              window.history.replaceState({}, '', cleanUrl.pathname + (cleanUrl.search ? cleanUrl.search : ''));
-            }
-          }
-        })
-        .catch((err) => {
-          console.warn('OAuth verifier exchange error:', err);
-        })
-        .finally(() => {
-          setIsGoogleLoading(false);
-        });
-    } else if (!initialUser) {
+    if (!initialUser) {
       actions.getCurrentUser().then(({ data }) => {
         if (data?.user) {
           setUser(data.user);

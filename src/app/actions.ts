@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import { cookies } from 'next/headers';
+import { revalidatePath } from 'next/cache';
 import crypto from 'node:crypto';
 import QRCode from 'qrcode';
 import { eq, desc, or, and, asc, sql } from 'drizzle-orm';
@@ -13,7 +14,6 @@ import { getPaymentGateway } from '@/lib/payment/adapter';
 import { getSystemConfig, updateSystemSection } from '@/lib/settings/service';
 import { syncRealtimeCatalog } from '@/lib/catalog/service';
 import { executeOrderFulfillment } from '@/lib/order/fulfillment';
-import { auth as neonAuth } from '@/lib/auth/server';
 import { 
   ADMIN_COOKIE_NAME, 
   verifyAdminPin, 
@@ -90,36 +90,8 @@ export async function registerUser(input: {
       phone: z.string().optional().default(''),
     }).parse(input);
 
-    let neonUserId: string | undefined;
-
-    // 1. Neon Managed Better Auth registration
-    try {
-      const neonRes = await neonAuth.signUp.email({
-        email: parsed.email,
-        name: parsed.name,
-        password: parsed.password,
-      });
-
-      if (neonRes?.data?.user) {
-        neonUserId = neonRes.data.user.id;
-      } else if (neonRes?.error) {
-        const msg = neonRes.error.message || '';
-        // If it is an explicit auth validation/conflict error, throw it
-        if (!msg.includes('fetch failed') && !msg.includes('ENOTFOUND') && !msg.includes('ECONNREFUSED')) {
-          throw new Error(msg);
-        }
-      }
-    } catch (neonErr) {
-      const errMsg = (neonErr as Error).message || '';
-      if (!errMsg.includes('fetch failed') && !errMsg.includes('ENOTFOUND') && !errMsg.includes('ECONNREFUSED')) {
-        throw neonErr;
-      }
-      console.warn('[NeonAuth] Upstream sign-up notice (using local sync):', errMsg);
-    }
-
-    // 2. Synchronize user in local schema for relational integrity
+    // Create user account in PostgreSQL
     const user = await createUserAccount({
-      id: neonUserId,
       name: parsed.name,
       email: parsed.email,
       password: parsed.password,
@@ -161,25 +133,7 @@ export async function loginUser(input: { email: string; password: string }) {
       password: z.string().min(1, 'Kata sandi tidak boleh kosong'),
     }).parse(input);
 
-    let user: any = null;
-
-    // 1. Neon Managed Better Auth login attempt
-    try {
-      const neonRes = await neonAuth.signIn.email({
-        email: parsed.email,
-        password: parsed.password,
-      });
-      if (neonRes?.data?.user) {
-        user = await syncNeonOAuthUser(neonRes.data.user);
-      }
-    } catch (neonErr) {
-      console.warn('[NeonAuth] Upstream sign-in notice:', (neonErr as Error).message);
-    }
-
-    // 2. Fall back to local authentication verification
-    if (!user) {
-      user = await authenticateUser(parsed.email, parsed.password);
-    }
+    const user = await authenticateUser(parsed.email, parsed.password);
 
     const { token } = await createUserSession(user.id);
 
@@ -211,10 +165,6 @@ export async function loginUser(input: { email: string; password: string }) {
 
 export async function logoutUser() {
   try {
-    try {
-      await neonAuth.signOut();
-    } catch {}
-
     const cookieStore = await cookies();
     const token = cookieStore.get(USER_COOKIE_NAME)?.value;
     if (token) {
@@ -1021,6 +971,10 @@ export async function reloadStoreCatalog() {
         return 0;
       });
 
+    try {
+      revalidatePath('/');
+    } catch {}
+
     return {
       success: true,
       data: {
@@ -1507,55 +1461,21 @@ export async function adminLogin(rawInput: {
       pin: z.string().optional(),
     }).parse(rawInput);
 
-    // 1. Better Auth Email & Password Login
+    // 1. Email & Password Admin Login
     if (input.email && input.password) {
-      let neonUser: any = null;
-      try {
-        const neonRes = await neonAuth.signIn.email({
-          email: input.email,
-          password: input.password,
-        });
-        if (neonRes?.data?.user) {
-          neonUser = neonRes.data.user;
-        } else if (neonRes?.error) {
-          const msg = neonRes.error.message || '';
-          if (!msg.includes('fetch failed') && !msg.includes('ENOTFOUND')) {
-            console.warn('[NeonAuth Admin] Sign-in notice:', msg);
-          }
-        }
-      } catch (err) {
-        console.warn('[NeonAuth Admin] Upstream sign-in notice:', (err as Error).message);
-      }
+      const localUser = await authenticateUser(input.email, input.password);
 
-      // Check local database for role & credentials
-      let localUser: any = null;
-      const [existing] = await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.email, input.email))
-        .limit(1);
-
-      if (existing) {
-        localUser = existing;
-      }
-
-      const isAdminInNeon = neonUser?.role === 'admin';
-      const isAdminInLocal = localUser?.role === 'admin';
-
-      if (!isAdminInNeon && !isAdminInLocal) {
-        // If PIN is provided as authorization bootstrap, promote user
+      if (localUser.role !== 'admin') {
+        // If Master PIN is provided as authorization bootstrap, promote user
         if (input.pin && verifyAdminPin(input.pin)) {
-          if (localUser) {
-            await db.update(schema.users).set({ role: 'admin' }).where(eq(schema.users.id, localUser.id));
-            localUser.role = 'admin';
-          }
+          await db.update(schema.users).set({ role: 'admin' }).where(eq(schema.users.id, localUser.id));
+          localUser.role = 'admin';
         } else {
-          throw new Error(`Akses Ditolak: Akun '${input.email}' tidak memiliki izin Administrator. Hubungi Super Admin untuk penugasan role.`);
+          throw new Error(`Akses Ditolak: Akun '${input.email}' tidak memiliki izin Administrator. Hubungi Super Admin atau gunakan Master PIN.`);
         }
       }
 
-      const activeUser = localUser || neonUser || { id: 'admin', name: 'Administrator', email: input.email, role: 'admin' };
-      const token = createAdminSessionToken({ id: activeUser.id, email: activeUser.email });
+      const token = createAdminSessionToken({ id: localUser.id, email: localUser.email });
       const cookieStore = await cookies();
       cookieStore.set(ADMIN_COOKIE_NAME, token, {
         path: '/',
@@ -1569,9 +1489,9 @@ export async function adminLogin(rawInput: {
         success: true,
         data: {
           user: {
-            id: activeUser.id,
-            name: activeUser.name,
-            email: activeUser.email,
+            id: localUser.id,
+            name: localUser.name,
+            email: localUser.email,
             role: 'admin',
           },
         },
@@ -1629,35 +1549,8 @@ export async function adminRegister(rawInput: {
       throw new Error('Kunci Otorisasi Toko tidak valid! Anda memerlukan Master PIN Toko untuk mendaftarkan akun admin.');
     }
 
-    let neonUserId: string | undefined;
-    // 1. Better Auth registration
-    try {
-      const neonRes = await neonAuth.signUp.email({
-        email: input.email,
-        name: input.name,
-        password: input.password,
-      });
-      if (neonRes?.data?.user) {
-        neonUserId = neonRes.data.user.id;
-        try {
-          await (neonAuth as any).admin?.setRole?.({ userId: neonUserId, role: 'admin' });
-        } catch {}
-      } else if (neonRes?.error) {
-        const msg = neonRes.error.message || '';
-        if (!msg.includes('fetch failed') && !msg.includes('ENOTFOUND')) {
-          throw new Error(msg);
-        }
-      }
-    } catch (neonErr) {
-      const errMsg = (neonErr as Error).message || '';
-      if (!errMsg.includes('fetch failed') && !errMsg.includes('ENOTFOUND')) {
-        throw neonErr;
-      }
-    }
-
-    // 2. Synchronize to local database with role: 'admin'
+    // Create administrator account in PostgreSQL
     let user = await createUserAccount({
-      id: neonUserId,
       name: input.name,
       email: input.email,
       password: input.password,
@@ -1669,7 +1562,7 @@ export async function adminRegister(rawInput: {
       user.role = 'admin';
     }
 
-    // 3. Issue admin session
+    // Issue admin session
     const token = createAdminSessionToken({ id: user.id, email: user.email });
     const cookieStore = await cookies();
     cookieStore.set(ADMIN_COOKIE_NAME, token, {
@@ -1711,28 +1604,8 @@ export async function adminSetUserRole(rawInput: {
       role: z.enum(['customer', 'admin']),
     }).parse(rawInput);
 
-    const betterAuthRole = role === 'admin' ? 'admin' : 'user';
-
-    // 1. Update in local public.users
+    // Update in PostgreSQL users table
     await db.update(schema.users).set({ role }).where(eq(schema.users.id, userId));
-
-    // 2. Direct synchronized update in neon_auth.user
-    try {
-      await (sqlClient as any)`
-        UPDATE neon_auth.user 
-        SET role = ${betterAuthRole}, "updatedAt" = CURRENT_TIMESTAMP
-        WHERE id::text = ${userId} OR email = (SELECT email FROM public.users WHERE id = ${userId} LIMIT 1);
-      `;
-    } catch (err) {
-      console.warn('[NeonAuth Admin SQL] Failed to update neon_auth.user role:', (err as Error).message);
-    }
-
-    // 3. Update also via Better Auth server helper if supported
-    try {
-      await (neonAuth as any).admin?.setRole?.({ userId, role: betterAuthRole });
-    } catch (err) {
-      // Non-blocking notice
-    }
 
     return { success: true, data: { userId, role } };
   } catch (err) {
@@ -1742,10 +1615,6 @@ export async function adminSetUserRole(rawInput: {
 
 export async function adminLogout() {
   try {
-    try {
-      await neonAuth.signOut();
-    } catch {}
-
     const cookieStore = await cookies();
     cookieStore.delete(ADMIN_COOKIE_NAME);
     return { success: true, data: { success: true } };
@@ -1984,6 +1853,10 @@ export async function adminUpdateProductPrice(rawInput: {
       })
       .where(eq(schema.productsCache.id, productId));
 
+    try {
+      revalidatePath('/');
+    } catch {}
+
     return {
       success: true,
       data: {
@@ -2007,6 +1880,9 @@ export async function syncCatalogNow() {
     }
 
     const result = await syncRealtimeCatalog(true);
+    try {
+      revalidatePath('/');
+    } catch {}
     return { success: true, data: { success: true, count: result.count } };
   } catch (err) {
     return { success: false, error: { message: (err as Error).message } };
