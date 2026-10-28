@@ -1,6 +1,5 @@
 import postgres from 'postgres';
-import * as dotenv from 'dotenv';
-dotenv.config();
+import '../src/lib/env';
 
 /**
  * Script migrasi data historis dari Neon PostgreSQL ke Heroku PostgreSQL.
